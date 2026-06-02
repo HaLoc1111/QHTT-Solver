@@ -81,7 +81,7 @@ for i in range(n_vars):
         else: bounds.append((None, None))
 
 # =========================================================================
-# VŨ KHÍ 1: TỰ ĐỘNG SINH BÀI TOÁN ĐỐI NGẪU VÀ MÔ HÌNH LATEX
+# MÔ HÌNH LATEX VÀ BÀI TOÁN ĐỐI NGẪU
 # =========================================================================
 st.markdown("---")
 tab_model_primal, tab_model_dual = st.tabs(["🔍 Mô hình Gốc (Primal)", "🔄 Bài toán Đối ngẫu (Dual)"])
@@ -102,7 +102,6 @@ def render_math_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds):
     latex_model = "$$\n\\begin{array}{ll}\n"
     latex_model += f"\\text{{Tối ưu hóa:}} & \\{opt_type.lower()} \\quad Z = {obj_str if obj_str else '0'} \\\\\n"
     latex_model += "\\text{Thỏa mãn:} & \\left\\{\n\\begin{array}{l}\n"
-    # Đã sửa lại lỗi join chuỗi và lỗi {array}
     latex_model += r" \\ ".join(cons_lines) + "\n\\end{array}\n\\right. \\\\\n"
     latex_model += f"& {', '.join(bound_terms)}\n\\end{{array}}\n$$" 
     return latex_model
@@ -147,7 +146,6 @@ def render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds):
     latex_model = "$$\n\\begin{array}{ll}\n"
     latex_model += f"\\text{{Bài toán Đối ngẫu:}} & \\{dual_opt.lower()} \\quad W = {dual_obj_str if dual_obj_str else '0'} \\\\\n"
     latex_model += "\\text{Thỏa mãn:} & \\left\\{\n\\begin{array}{l}\n"
-    # Đã sửa lại lỗi join chuỗi và lỗi {array}
     latex_model += r" \\ ".join(dual_cons_lines) + "\n\\end{array}\n\\right. \\\\\n"
     latex_model += f"& {', '.join(dual_bounds)}\n\\end{{array}}\n$$"
     return latex_model
@@ -161,7 +159,6 @@ with tab_model_dual:
 # ----------------- CÁC HÀM XỬ LÝ (CORE LOGIC) -----------------
 
 def log_and_print(log, text):
-    """Hàm phụ trợ: Vừa in ra màn hình, vừa lưu vào log để xuất file Báo cáo"""
     st.markdown(text)
     log.append(text)
 
@@ -188,11 +185,12 @@ def solve_scipy(c, df_cons, obj_cols, opt_type, bounds):
         
         col1, col2 = st.columns(2)
         with col1:
-            st.write("**Nghiệm bài toán (Primal values):**")
-            st.dataframe(pd.DataFrame({"Biến": obj_cols, "Giá trị": np.round(res.x, 4)}))
+            st.write("🎯 **Chiến lược hành động (Nghiệm tối ưu):**")
+            st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Số lượng cần làm": np.round(res.x, 4)}))
+            st.info("💡 **Giải thích:** Bảng trên cho bạn biết chính xác cần phân bổ nguồn lực để đạt được kết quả tốt nhất.")
             
         with col2:
-            st.write("**Phân tích độ nhạy (Shadow Prices):**")
+            st.write("📊 **Phân tích độ nhạy (Shadow Prices - Giá mờ):**")
             shadow_prices = []
             if hasattr(res, 'ineqlin') and hasattr(res.ineqlin, 'marginals'):
                 shadow_prices.extend(res.ineqlin.marginals)
@@ -201,26 +199,127 @@ def solve_scipy(c, df_cons, obj_cols, opt_type, bounds):
             
             if shadow_prices:
                 sp_vals = np.round(np.abs(shadow_prices), 4) 
-                sp_df = pd.DataFrame({"Ràng buộc (PT)": [f"PT {i+1}" for i in range(len(sp_vals))], "Shadow Price": sp_vals})
+                sp_df = pd.DataFrame({"Ràng buộc (PT)": [f"PT {i+1}" for i in range(len(sp_vals))], "Giá mờ": sp_vals})
                 st.dataframe(sp_df)
-                st.caption("💡 *Shadow Price: Nếu tăng RHS thêm 1 đơn vị, Z sẽ thay đổi bao nhiêu.*")
+                
+                st.write("🗣️ **Lời khuyên thực tế (Dành cho người kinh doanh):**")
+                for i, sp in enumerate(sp_vals):
+                    if sp > 1e-4:
+                        if opt_type == "MAX":
+                            advice = f"- **PT {i+1}:** Cứ thêm 1 đơn vị nguồn lực này, lợi nhuận tăng `{sp}`. 👉 *Chỉ mua thêm nếu giá rẻ hơn {sp}*."
+                        else:
+                            advice = f"- **PT {i+1}:** Nới lỏng giới hạn này 1 đơn vị, chi phí giảm `{sp}`. 👉 *Nên mở rộng nếu chi phí mở rộng rẻ hơn {sp}*."
+                        st.markdown(advice)
+                    else:
+                        st.markdown(f"- **PT {i+1}:** Nguồn lực đang **DƯ THỪA**. 👉 *KHÔNG tốn tiền mua thêm.*")
             else:
-                st.write("Không trích xuất được Shadow Prices.")
+                st.write("Không trích xuất được Giá mờ cho mô hình này.")
     else:
-        # BẮT LỖI VÀ DỊCH SANG TIẾNG VIỆT
         if res.status == 3:
             st.error("❌ BÀI TOÁN KHÔNG GIỚI HẠN (UNBOUNDED)!")
-            st.write("Hàm mục tiêu có thể tiến tới vô cực do miền nghiệm không bị chặn. Hãy kiểm tra lại các ràng buộc (có thể bạn thiếu ràng buộc chặn trên hoặc chọn sai mục tiêu MIN/MAX).")
+            st.write("Vùng khả thi bị mở toang. Lợi nhuận của bạn có thể tăng đến vô cực. Hãy kiểm tra lại các ràng buộc!")
         elif res.status == 2:
             st.error("❌ BÀI TOÁN VÔ NGHIỆM (INFEASIBLE)!")
-            st.write("Không tồn tại phương án nào thỏa mãn tất cả các ràng buộc cùng một lúc (Tập chấp nhận được là tập rỗng).")
+            st.write("Các điều kiện bạn đưa ra đang mâu thuẫn nhau. Không có cách nào thực hiện được!")
         else:
             st.error(f"❌ Lỗi chưa xác định từ bộ giải: {res.message}")
-        st.error(res.message)
 
 def solve_graph(c, df_cons, n_vars, opt_type):
-    # (Giữ nguyên hàm vẽ đồ thị cũ, bỏ qua ở đây cho gọn, bạn copy paste mã đồ thị cũ vào đây)
-    pass # Thay bằng thân hàm đồ thị đã hoàn thiện ở phiên bản trước
+    if n_vars != 2:
+        st.error("❌ Phương pháp đồ thị chỉ hỗ trợ bài toán có đúng 2 biến (x1, x2).")
+        return
+        
+    st.write("### 🎚️ Mô phỏng Trượt hàm mục tiêu")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        z_slider = st.slider("Giá trị Z hiện tại", min_value=-30.0, max_value=30.0, value=0.0, step=0.5)
+    with col2:
+        st.write(""); st.write("")
+        is_auto = st.button("🎬 Bật Tự Động Trượt", type="secondary")
+
+    plot_container = st.empty()
+    c1, c2 = float(c[0]), float(c[1])
+
+    def render_frame(current_z):
+        fig, ax = plt.subplots(figsize=(8, 8))
+        d = np.linspace(-5, 20, 400)
+        x1, x2 = np.meshgrid(d, d)
+        mask = (x1 >= 0) & (x2 >= 0) 
+        
+        ax.axhline(0, color='black', linewidth=1.5)
+        ax.axvline(0, color='black', linewidth=1.5)
+        ax.plot(0, 0, 'ko')
+        ax.text(0.2, -0.5, 'O(0,0)', fontsize=12, fontweight='bold')
+        
+        colors = ['blue', 'green', 'purple', 'orange']
+        for idx, row in df_cons.iterrows():
+            a1, a2 = float(row["x1"]), float(row["x2"])
+            rhs = float(row["RHS"])
+            sign = row["Dấu"]
+            color = colors[idx % len(colors)]
+            
+            if a2 != 0:
+                y = (rhs - a1 * d) / a2
+                ax.plot(d, y, color=color, label=f"(PT{idx+1}): {a1}x1 + {a2}x2 {sign} {rhs}")
+                if rhs/a2 >= 0:
+                    ax.plot(0, rhs/a2, marker='o', color=color)
+                    ax.text(0.2, rhs/a2 + 0.2, f'(0, {rhs/a2:.1f})')
+                if a1 != 0 and rhs/a1 >= 0:
+                    ax.plot(rhs/a1, 0, marker='o', color=color)
+                    ax.text(rhs/a1 + 0.2, 0.2, f'({rhs/a1:.1f}, 0)')
+                    
+                norm_a = np.sqrt(a1**2 + a2**2)
+                if norm_a != 0:
+                    dir_x = -a1 / norm_a if sign == "<=" else a1 / norm_a
+                    dir_y = -a2 / norm_a if sign == "<=" else a2 / norm_a
+                    px = (rhs/a1)/2 if a1 != 0 else 2.0
+                    py = (rhs - a1 * px) / a2
+                    ax.annotate('', xy=(px + dir_x*1.5, py + dir_y*1.5), xytext=(px, py), arrowprops=dict(arrowstyle="->", color=color, lw=2))
+            else:
+                ax.axvline(x=rhs/a1, color=color, label=f"(PT{idx+1}): {a1}x1 {sign} {rhs}")
+                dir_x = -1 if sign == "<=" else 1
+                ax.annotate('', xy=(rhs/a1 + dir_x*1.5, 5), xytext=(rhs/a1, 5), arrowprops=dict(arrowstyle="->", color=color, lw=2))
+
+            if sign == "<=": mask = mask & (a1 * x1 + a2 * x2 <= rhs)
+            elif sign == ">=": mask = mask & (a1 * x1 + a2 * x2 >= rhs)
+                
+        ax.imshow(mask.astype(int), extent=(-5, 20, -5, 20), origin="lower", cmap="Greys", alpha=0.3)
+        
+        if c2 != 0:
+            y_obj = (current_z - c1 * d) / c2
+            ax.plot(d, y_obj, 'r-', linewidth=2.5, label=f"Đường Z = {current_z:.1f}")
+            y_inf_plus = (40.0 - c1 * d) / c2
+            ax.plot(d, y_inf_plus, 'r--', alpha=0.4)
+            y_inf_minus = (-40.0 - c1 * d) / c2
+            ax.plot(d, y_inf_minus, 'b--', alpha=0.4)
+            
+            mid_x = 4.0
+            mid_y = (current_z - c1 * mid_x) / c2
+            norm_c = np.sqrt(c1**2 + c2**2)
+            if norm_c != 0:
+                u = (c1 / norm_c) * 2.0
+                v = (c2 / norm_c) * 2.0
+                ax.annotate('+∞ (Tăng)', xy=(mid_x + u, mid_y + v), xytext=(mid_x, mid_y), arrowprops=dict(facecolor='red', width=1.5, headwidth=8, shrink=0.05), color='red', fontsize=11, fontweight='bold')
+                ax.annotate('-∞ (Giảm)', xy=(mid_x - u, mid_y - v), xytext=(mid_x, mid_y), arrowprops=dict(facecolor='blue', width=1.5, headwidth=8, shrink=0.05), color='blue', fontsize=11, fontweight='bold')
+
+        ax.set_xlim(-2, 10)
+        ax.set_ylim(-2, 10)
+        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.set_xlabel("x1", fontweight='bold')
+        ax.set_ylabel("x2", fontweight='bold')
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        return fig
+
+    if is_auto:
+        for val in np.arange(-15.0, 20.0 + 1, 1.0):
+            fig = render_frame(val)
+            plot_container.pyplot(fig)
+            plt.close(fig) 
+            time.sleep(0.15) 
+    else:
+        fig = render_frame(z_slider)
+        plot_container.pyplot(fig)
+
 def format_dictionary(N, B, A_N, b_B, c_N, v, var_names, enter_j=-1, leave_i=-1, obj_name="Z"):
     z_eq = f"{obj_name} = {v:.2f}"
     for j, n_idx in enumerate(N):
@@ -244,7 +343,6 @@ def format_dictionary(N, B, A_N, b_B, c_N, v, var_names, enter_j=-1, leave_i=-1,
         if i == leave_i: eq += r" \quad \color{red}{\leftarrow \text{ (Ra)}}"
         lines.append(eq)
         
-    # Đã bọc r"" để giữ lại chuẩn xác cấu trúc dấu gạch ngang
     dict_str = z_eq + r" \\ \hline " + "\n" + r" \\ ".join(lines)
     return f"$$\n\\begin{{array}}{{l}}\n{dict_str}\n\\end{{array}}\n$$"
 
@@ -308,7 +406,7 @@ def run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z",
         iteration += 1
 
 def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
-    log = [] # VŨ KHÍ 3: Mảng lưu trữ toàn bộ lịch sử chạy để xuất Report
+    log = [] 
     
     if any(b != (0, None) for b in bounds): log_and_print(log, "⚠️ *Thuật toán Từ vựng giả định x >= 0.*")
     if any(df_cons["Dấu"] != "<="):
@@ -366,8 +464,7 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
 
     run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z", opt_type=opt_type)
 
-    # VŨ KHÍ 3: HIỂN THỊ NÚT TẢI BÁO CÁO (MARKDOWN)
-    report_content = "\n\n".join(log) # Gom tất cả log thành 1 file text
+    report_content = "\n\n".join(log) 
     st.download_button(
         label="📥 Tải file Báo Cáo chi tiết (.md)",
         data=report_content,
@@ -383,11 +480,12 @@ if st.button("🚀 GIẢI BÀI TOÁN", type="primary"): st.session_state.is_solv
 if st.session_state.is_solved:
     c = df_obj.iloc[0].values.astype(float)
     if method == "1. Scipy (Tổng quát, nhanh)": solve_scipy(c, df_cons, obj_cols, opt_type, bounds)
-    # elif method == "2. Đồ thị (Chỉ 2 biến)": solve_graph(c, df_cons, n_vars, opt_type)
+    elif method == "2. Đồ thị (Chỉ 2 biến)": solve_graph(c, df_cons, n_vars, opt_type)
     elif method == "3. Từ vựng (Đơn hình Dantzig)": solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig')
     elif method == "4. Từ vựng (Đơn hình Bland)": solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='bland')
     elif method == "5. Chạy tất cả (So sánh)":
-        tab1, tab3, tab4 = st.tabs(["📦 Thư viện Scipy", "📝 Từ vựng (Dantzig)", "📝 Từ vựng (Bland)"]) # Tạm ẩn tab 2 đồ thị cho code gọn
+        tab1, tab2, tab3, tab4 = st.tabs(["📦 Thư viện Scipy", "📈 Phương pháp Đồ thị", "📝 Từ vựng (Dantzig)", "📝 Từ vựng (Bland)"])
         with tab1: solve_scipy(c, df_cons, obj_cols, opt_type, bounds)
+        with tab2: solve_graph(c, df_cons, n_vars, opt_type)
         with tab3: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig')
         with tab4: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='bland')
