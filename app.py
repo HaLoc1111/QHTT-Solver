@@ -511,4 +511,4 @@ if st.session_state.is_solved:
         with tab1: solve_scipy(c, df_cons, obj_cols, opt_type, bounds)
         with tab2: solve_graph(c, df_cons, n_vars, opt_type)
         with tab3: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig')
-        with tab4: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='bland') cứu tôi
+        with tab4: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='bland')
