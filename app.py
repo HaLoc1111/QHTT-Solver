@@ -14,7 +14,7 @@ st.title("📈 Chương trình giải Quy Hoạch Tuyến Tính Tổng Quát")
 st.markdown("---")
 
 # =========================================================================
-# QUẢN LÝ SESSION STATE BẤT BẠI
+# QUẢN LÝ SESSION STATE
 # =========================================================================
 if "n_vars" not in st.session_state: st.session_state.n_vars = 2
 if "n_cons" not in st.session_state: st.session_state.n_cons = 3
@@ -32,10 +32,10 @@ if st.session_state.init_cons.shape[0] != st.session_state.n_cons or st.session_
     st.session_state.init_cons = pd.DataFrame([[0.0] * st.session_state.n_vars + ["<=", 0.0] for _ in range(st.session_state.n_cons)], columns=obj_cols + ["Dấu", "RHS"])
 
 # =========================================================================
-# GIAO DIỆN CHÍNH: VŨ KHÍ AI NHẬN DIỆN ẢNH (ĐƯA LÊN ĐẦU TIÊN)
+# GIAO DIỆN CHÍNH: QUÉT ẢNH AI 
 # =========================================================================
 st.markdown("### 📸 1. Tự động nhập đề bằng AI (Upload Ảnh)")
-st.info("💡 Tải ảnh bài toán (chụp vở hoặc màn hình) lên đây. AI sẽ đọc và tự động điền vào bảng bên dưới!")
+st.info("💡 Tải ảnh bài toán lên đây. AI sẽ đọc và tự động điền vào bảng bên dưới!")
 uploaded_file = st.file_uploader("Kéo thả hoặc chọn ảnh...", type=["jpg", "png", "jpeg"])
 
 try:
@@ -80,7 +80,8 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                 if response is None:
                     st.error("❌ Google API từ chối kết nối. Hãy kiểm tra lại API Key.")
                 else:
-                    raw_text = response.text.strip().replace("```json", "").replace("```", "").strip()
+                    raw_text = response.text.strip().replace("```json", "").replace("
+```", "").strip()
                     data = json.loads(raw_text)
                     
                     st.session_state.opt_type = data.get("opt_type", "MAX").upper()
@@ -106,7 +107,7 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
 st.markdown("---")
 
 # =========================================================================
-# GIAO DIỆN SIDEBAR (CÀI ĐẶT & DỮ LIỆU MẪU)
+# GIAO DIỆN SIDEBAR
 # =========================================================================
 st.sidebar.header("Cài đặt chung")
 method = st.sidebar.radio(
@@ -135,7 +136,6 @@ if st.sidebar.button("🔄 Đặt lại bảng trống", help="Xóa sạch dữ 
     st.rerun()
 st.sidebar.markdown("---")
 
-# Nhập số liệu kích thước bảng
 new_n_vars = st.sidebar.number_input("Số lượng biến", 1, 20, st.session_state.n_vars, key="vars_input")
 new_n_cons = st.sidebar.number_input("Số lượng ràng buộc", 1, 20, st.session_state.n_cons, key="cons_input")
 if new_n_vars != st.session_state.n_vars or new_n_cons != st.session_state.n_cons:
@@ -243,7 +243,7 @@ with tab_model_dual:
     st.markdown(render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds))
 
 # =========================================================================
-# CÁC HÀM XỬ LÝ (CORE LOGIC) ĐÃ PHỤC HỒI 100% CỦA BẠN
+# CÁC HÀM XỬ LÝ (CORE LOGIC ĐÃ FIX FULL BUGS)
 # =========================================================================
 
 def log_and_print(log, text):
@@ -269,13 +269,11 @@ def solve_scipy(c, df_cons, obj_cols, opt_type, bounds):
                   bounds=bounds, method='highs')
     if res.success:
         opt_val = res.fun if opt_type == "MIN" else -res.fun
-        st.success(f"✅ Nghiệm tối ưu: Z = {opt_val:.4f}")
-        
+        st.success(f"✅ Nghiệm tối ưu (Scipy): Z = {opt_val:.4f}")
         col1, col2 = st.columns(2)
         with col1:
             st.write("🎯 **Chiến lược hành động:**")
-            st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Số lượng": np.round(res.x, 4)}))
-            
+            st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Giá trị": np.round(res.x, 4)}))
         with col2:
             st.write("📊 **Giá mờ (Shadow Prices):**")
             shadow_prices = []
@@ -283,7 +281,6 @@ def solve_scipy(c, df_cons, obj_cols, opt_type, bounds):
                 shadow_prices.extend(res.ineqlin.marginals)
             if hasattr(res, 'eqlin') and hasattr(res.eqlin, 'marginals'):
                 shadow_prices.extend(res.eqlin.marginals)
-            
             if shadow_prices:
                 sp_vals = np.round(np.abs(shadow_prices), 4) 
                 sp_df = pd.DataFrame({"PT": [f"PT {i+1}" for i in range(len(sp_vals))], "Giá mờ": sp_vals})
@@ -291,18 +288,14 @@ def solve_scipy(c, df_cons, obj_cols, opt_type, bounds):
             else:
                 st.write("Không trích xuất được Giá mờ.")
     else:
-        if res.status == 3:
-            st.error("❌ BÀI TOÁN KHÔNG GIỚI HẠN (UNBOUNDED)!")
-        elif res.status == 2:
-            st.error("❌ BÀI TOÁN VÔ NGHIỆM (INFEASIBLE)!")
-        else:
-            st.error(f"❌ Lỗi: {res.message}")
+        if res.status == 3: st.error("❌ BÀI TOÁN KHÔNG GIỚI HẠN (UNBOUNDED)!")
+        elif res.status == 2: st.error("❌ BÀI TOÁN VÔ NGHIỆM (INFEASIBLE)!")
+        else: st.error(f"❌ Lỗi: {res.message}")
 
 def solve_graph(c, df_cons, n_vars, opt_type):
     if n_vars != 2:
         st.error("❌ Phương pháp đồ thị chỉ hỗ trợ bài toán có đúng 2 biến (x1, x2).")
         return
-        
     st.write("### 🎚️ Mô phỏng Trượt hàm mục tiêu")
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -322,7 +315,6 @@ def solve_graph(c, df_cons, n_vars, opt_type):
         
         ax.axhline(0, color='black', linewidth=1.5)
         ax.axvline(0, color='black', linewidth=1.5)
-        ax.plot(0, 0, 'ko')
         
         colors = ['blue', 'green', 'purple', 'orange']
         for idx, row in df_cons.iterrows():
@@ -333,38 +325,30 @@ def solve_graph(c, df_cons, n_vars, opt_type):
             
             if a2 != 0:
                 y = (rhs - a1 * d) / a2
-                ax.plot(d, y, color=color, label=f"(PT{idx+1}): {a1}x1 + {a2}x2 {sign} {rhs}")
+                ax.plot(d, y, color=color, label=f"(PT{idx+1})")
             else:
-                if a1 != 0:
-                    ax.axvline(x=rhs/a1, color=color, label=f"(PT{idx+1}): {a1}x1 {sign} {rhs}")
+                if a1 != 0: ax.axvline(x=rhs/a1, color=color, label=f"(PT{idx+1})")
 
             if sign == "<=": mask = mask & (a1 * x1 + a2 * x2 <= rhs)
             elif sign == ">=": mask = mask & (a1 * x1 + a2 * x2 >= rhs)
                 
         ax.imshow(mask.astype(int), extent=(-5, 20, -5, 20), origin="lower", cmap="Greys", alpha=0.3)
-        
         if c2 != 0:
             y_obj = (current_z - c1 * d) / c2
             ax.plot(d, y_obj, 'r-', linewidth=2.5, label=f"Đường Z = {current_z:.1f}")
-        else:
-            if c1 != 0:
-                ax.axvline(x=current_z/c1, color='r', linewidth=2.5, label=f"Đường Z = {current_z:.1f}")
+        elif c1 != 0:
+            ax.axvline(x=current_z/c1, color='r', linewidth=2.5, label=f"Đường Z = {current_z:.1f}")
 
-        ax.set_xlim(-2, 10)
-        ax.set_ylim(-2, 10)
+        ax.set_xlim(-2, 10); ax.set_ylim(-2, 10)
         ax.grid(True, linestyle='--', alpha=0.6)
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         return fig
 
     if is_auto:
         for val in np.arange(-15.0, 20.0 + 1, 1.0):
-            fig = render_frame(val)
-            plot_container.pyplot(fig)
-            plt.close(fig) 
-            time.sleep(0.15) 
+            fig = render_frame(val); plot_container.pyplot(fig); plt.close(fig); time.sleep(0.15) 
     else:
-        fig = render_frame(z_slider)
-        plot_container.pyplot(fig)
+        fig = render_frame(z_slider); plot_container.pyplot(fig)
 
 def format_dictionary(N, B, A_N, b_B, c_N, v, var_names, enter_j=-1, leave_i=-1, obj_name="Z"):
     z_eq = f"{obj_name} = {v:.2f}"
@@ -422,6 +406,7 @@ def run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z",
         display_v = -v if (opt_type == "MIN" and obj_name == "Z") else v
         display_c_N = -c_N if (opt_type == "MIN" and obj_name == "Z") else c_N
         current_basis = frozenset(B)
+        
         if current_basis in visited_bases:
             log_and_print(log, "⚠️ **PHÁT HIỆN LẶP XOAY VÒNG (CYCLING)!**")
             log_and_print(log, format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, obj_name=obj_name))
@@ -434,16 +419,26 @@ def run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z",
             if obj_name == "Z": log_and_print(log, f"✅ **Đạt phương án tối ưu! {obj_name} = {display_v:.4f}**")
             return N, B, A_N, b_B, c_N, v
 
-        enter_j = min([j for j, val in enumerate(c_N) if val == np.max(c_N)], key=lambda j: N[j]) if rule == 'dantzig' else min([j for j, val in enumerate(c_N) if val > 1e-6], key=lambda j: N[j])
+        if rule == 'dantzig':
+            max_c = np.max(c_N)
+            enter_j = min([j for j, val in enumerate(c_N) if abs(val - max_c) < 1e-6], key=lambda j: N[j])
+        else:
+            enter_j = min([j for j, val in enumerate(c_N) if val > 1e-6], key=lambda j: N[j])
+            
         m = len(B)
-        ratios = [b_B[i] / A_N[i, enter_j] if A_N[i, enter_j] > 1e-6 else np.inf for i in range(m)]
+        # Sử dụng max(0, b_B) để chặn lỗi sai số làm tròn âm (Floating Point Bug)
+        ratios = [max(0.0, b_B[i]) / A_N[i, enter_j] if A_N[i, enter_j] > 1e-6 else np.inf for i in range(m)]
+        
         if all(r == np.inf for r in ratios):
             log_and_print(log, f"**Lần lặp {iteration}:**")
             log_and_print(log, format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, enter_j=enter_j, obj_name=obj_name))
             log_and_print(log, "❌ **Bài toán không giới hạn (Unbounded)!**")
+            if obj_name == "Z": st.error("❌ BÀI TOÁN KHÔNG GIỚI HẠN (UNBOUNDED)!")
             return None
 
-        leave_i = min([i for i, r in enumerate(ratios) if abs(r - min(ratios)) < 1e-6], key=lambda i: B[i])
+        min_ratio = min(ratios)
+        leave_i = min([i for i, r in enumerate(ratios) if abs(r - min_ratio) < 1e-6], key=lambda i: B[i])
+        
         log_and_print(log, f"**Lần lặp {iteration}:**")
         log_and_print(log, format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, enter_j=enter_j, leave_i=leave_i, obj_name=obj_name))
         log_and_print(log, f"🔄 Biến vào: **{var_names[N[enter_j]]}** | Biến ra: **{var_names[B[leave_i]]}**")
@@ -453,24 +448,35 @@ def run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z",
 
 def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
     log = [] 
-    
-    if any(b != (0, None) for b in bounds): log_and_print(log, "⚠️ *Thuật toán Từ vựng giả định x >= 0.*")
-    if any(df_cons["Dấu"] != "<="):
-        log_and_print(log, "⚠️ *Hiện tại bộ giải Từ vựng tự viết chỉ tối ưu cho các ràng buộc có dấu <=*")
-        return
+    if any(b != (0, None) for b in bounds): 
+        log_and_print(log, "⚠️ *Thuật toán Từ vựng giả định x >= 0. Các loại ràng buộc dấu khác không được bảo đảm tính chính xác.*")
 
     A, b = [], []
     for _, row in df_cons.iterrows():
-        A.append(row[obj_cols].fillna(0).values.astype(float))
-        b.append(float(row["RHS"]) if not pd.isna(row["RHS"]) else 0.0)
+        coeffs = row[obj_cols].fillna(0).values.astype(float)
+        rhs = float(row["RHS"]) if not pd.isna(row["RHS"]) else 0.0
+        sign = row["Dấu"]
         
+        # Tự động quy đổi chuẩn hóa bất phương trình để Từ vựng giải bách phát bách trúng
+        if sign == "<=":
+            A.append(coeffs)
+            b.append(rhs)
+        elif sign == ">=":
+            A.append(-coeffs)
+            b.append(-rhs)
+        elif sign == "=":
+            A.append(coeffs)
+            b.append(rhs)
+            A.append(-coeffs)
+            b.append(-rhs)
+            
     n, m = len(c), len(b)
     c_orig = -np.array(c, dtype=float) if opt_type == "MIN" else np.array(c, dtype=float)
     A_N, b_B = np.array(A, dtype=float), np.array(b, dtype=float)
     var_names = [f"x_{i+1}" for i in range(n)] + [f"w_{i+1}" for i in range(m)] + ["x_0"]
     x0_idx = n + m
     
-    if np.min(b_B) < 0:
+    if np.min(b_B) < -1e-6:
         log_and_print(log, "### 🛠️ PHA 1: Bài toán bổ trợ (Tìm phương án xuất phát)")
         N, B = list(range(n)) + [x0_idx], list(range(n, n + m))
         A_N = np.column_stack((A_N, np.full(m, -1.0)))
@@ -488,7 +494,9 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
 
         if v < -1e-6:
             log_and_print(log, "❌ **BÀI TOÁN VÔ NGHIỆM! (Pha 1 có x_0 > 0).**")
+            st.error("❌ BÀI TOÁN VÔ NGHIỆM! Các ràng buộc mâu thuẫn nhau.")
             return
+            
         log_and_print(log, "✅ **Kết thúc Pha 1 thành công. Khử biến x_0 và chuyển sang Pha 2.**")
         
         if x0_idx in N:
@@ -508,15 +516,28 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
     else:
         N, B, c_N, v = list(range(n)), list(range(n, n + m)), c_orig.copy(), 0.0
 
-    run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z", opt_type=opt_type)
+    res = run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z", opt_type=opt_type)
+
+    if res is not None:
+        N, B, A_N, b_B, c_N, v = res
+        opt_val = -v if opt_type == "MIN" else v
+        st.success(f"✅ Nghiệm tối ưu (Từ vựng - {rule.title()}): Z = {opt_val:.4f}")
+        
+        # FIX: TRÍCH XUẤT RÕ RÀNG GIÁ TRỊ CÁC BIẾN CHÍNH THỨC X RA BẢNG
+        opt_x = np.zeros(n)
+        for k in range(n):
+            if k in B:
+                opt_x[k] = b_B[B.index(k)]
+        
+        st.write("🎯 **Bảng Giá trị Nghiệm (Nghiệm Tối Ưu):**")
+        st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Giá trị": np.round(opt_x, 4)}))
 
     report_content = "\n\n".join(log) 
     st.download_button(
-        label="📥 Tải file Báo Cáo chi tiết (.md)",
+        label=f"📥 Tải Báo Cáo Giải Chi Tiết ({rule.title()})",
         data=report_content,
         file_name=f"BaoCao_QHTT_{rule}.md",
-        mime="text/markdown",
-        help="Tải toàn bộ các bước giải thành file văn bản."
+        mime="text/markdown"
     )
 
 # ----------------- NÚT THỰC THI CHÍNH -----------------
