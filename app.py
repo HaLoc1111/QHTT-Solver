@@ -14,7 +14,7 @@ st.title("📈 Chương trình giải Quy Hoạch Tuyến Tính Tổng Quát")
 st.markdown("---")
 
 # =========================================================================
-# QUẢN LÝ SESSION STATE
+# QUẢN LÝ SESSION STATE BẤT BẠI
 # =========================================================================
 if "n_vars" not in st.session_state: st.session_state.n_vars = 2
 if "n_cons" not in st.session_state: st.session_state.n_cons = 3
@@ -80,8 +80,13 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                 if response is None:
                     st.error("❌ Google API từ chối kết nối. Hãy kiểm tra lại API Key.")
                 else:
-                    raw_text = response.text.strip().replace("```json", "").replace("
-```", "").strip()
+                    # FIX: Dùng phép nhân chuỗi để vô hiệu hóa lỗi copy-paste markdown
+                    raw_text = response.text.strip()
+                    backticks = "`" * 3
+                    raw_text = raw_text.replace(backticks + "json", "")
+                    raw_text = raw_text.replace(backticks, "")
+                    raw_text = raw_text.strip()
+                    
                     data = json.loads(raw_text)
                     
                     st.session_state.opt_type = data.get("opt_type", "MAX").upper()
@@ -426,7 +431,6 @@ def run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z",
             enter_j = min([j for j, val in enumerate(c_N) if val > 1e-6], key=lambda j: N[j])
             
         m = len(B)
-        # Sử dụng max(0, b_B) để chặn lỗi sai số làm tròn âm (Floating Point Bug)
         ratios = [max(0.0, b_B[i]) / A_N[i, enter_j] if A_N[i, enter_j] > 1e-6 else np.inf for i in range(m)]
         
         if all(r == np.inf for r in ratios):
@@ -457,7 +461,6 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
         rhs = float(row["RHS"]) if not pd.isna(row["RHS"]) else 0.0
         sign = row["Dấu"]
         
-        # Tự động quy đổi chuẩn hóa bất phương trình để Từ vựng giải bách phát bách trúng
         if sign == "<=":
             A.append(coeffs)
             b.append(rhs)
@@ -523,7 +526,6 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
         opt_val = -v if opt_type == "MIN" else v
         st.success(f"✅ Nghiệm tối ưu (Từ vựng - {rule.title()}): Z = {opt_val:.4f}")
         
-        # FIX: TRÍCH XUẤT RÕ RÀNG GIÁ TRỊ CÁC BIẾN CHÍNH THỨC X RA BẢNG
         opt_x = np.zeros(n)
         for k in range(n):
             if k in B:
