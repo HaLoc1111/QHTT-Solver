@@ -55,22 +55,14 @@ if st.sidebar.button("🧠 Quét & Tự động điền"):
             prompt = "Bạn là chuyên gia Toán học. Hãy đọc bài toán Quy hoạch tuyến tính trong ảnh.\nTrả về DUY NHẤT một JSON hợp lệ (không có markdown, không có text khác) với cấu trúc:\n{\n\"opt_type\": \"MAX\" hoặc \"MIN\",\n\"n_vars\": số nguyên (số lượng biến),\n\"n_cons\": số nguyên (số lượng ràng buộc),\n\"obj\": [mảng số thực chứa các hệ số hàm mục tiêu],\n\"cons\": [\n{\"coeffs\": [mảng hệ số], \"sign\": \"<=\" hoặc \">=\" hoặc \"=\", \"rhs\": số vế phải}\n]\n}"
             
             with st.spinner("🤖 AI đang giải mã chữ viết tay của bạn..."):
-                response = None
-                last_error = ""
-                model_names_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro-vision']
+                # CHỈ GỌI DUY NHẤT MODEL CHUẨN ĐỂ LẤY LỖI GỐC
+                model = genai.GenerativeModel('gemini-1.5-flash')
                 
-                for m_name in model_names_to_try:
-                    try:
-                        model = genai.GenerativeModel(m_name)
-                        response = model.generate_content([prompt, image])
-                        break 
-                    except Exception as e:
-                        last_error = str(e)
-                        continue 
-                
-                if response is None:
-                    st.error(f"🛑 LỖI TỪ GOOGLE: {last_error}")
-                    st.stop() 
+                try:
+                    response = model.generate_content([prompt, image])
+                except Exception as api_err:
+                    st.error(f"🛑 LỖI TỪ GOOGLE: {api_err}")
+                    st.stop()
                 
                 # Làm sạch chuỗi JSON an toàn
                 raw_text = response.text.strip()
@@ -171,11 +163,12 @@ def render_math_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds):
     
     bound_terms = [f"x_{i+1} \\ge 0" if b==(0,None) else (f"x_{i+1} \\le 0" if b==(None,0) else f"x_{i+1} \\text{{ tùy ý}}") for i, b in enumerate(bounds)]
     
+    # Đã sửa triệt để lỗi NameError bằng cách tách chuỗi nối tay
     latex_model = "$$\n\\begin{array}{ll}\n"
-    latex_model += f"\\text{{Tối ưu hóa:}} & \\{opt_type.lower()} \\quad Z = {obj_str if obj_str else '0'} \\\\\n"
+    latex_model += "\\text{Tối ưu hóa:} & \\" + opt_type.lower() + f" \\quad Z = {obj_str if obj_str else '0'} \\\\\n"
     latex_model += "\\text{Thỏa mãn:} & \\left\\{\n\\begin{array}{l}\n"
     latex_model += r" \\ ".join(cons_lines) + "\n\\end{array}\n\\right. \\\\\n"
-    latex_model += f"& {', '.join(bound_terms)}\n\\end{{array}}\n$$" 
+    latex_model += "& " + ", ".join(bound_terms) + "\n\\end{array}\n$$" 
     return latex_model
 
 def render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds):
@@ -215,11 +208,12 @@ def render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds):
             elif s == "<=": dual_bounds.append(f"y_{i+1} \\le 0")
             else: dual_bounds.append(f"y_{i+1} \\text{{ tùy ý}}")
 
+    # Đã sửa triệt để lỗi NameError
     latex_model = "$$\n\\begin{array}{ll}\n"
-    latex_model += f"\\text{{Bài toán Đối ngẫu:}} & \\{dual_opt.lower()} \\quad W = {dual_obj_str if dual_obj_str else '0'} \\\\\n"
+    latex_model += "\\text{Bài toán Đối ngẫu:} & \\" + dual_opt.lower() + f" \\quad W = {dual_obj_str if dual_obj_str else '0'} \\\\\n"
     latex_model += "\\text{Thỏa mãn:} & \\left\\{\n\\begin{array}{l}\n"
     latex_model += r" \\ ".join(dual_cons_lines) + "\n\\end{array}\n\\right. \\\\\n"
-    latex_model += f"& {', '.join(dual_bounds)}\n\\end{{array}}\n$$"
+    latex_model += "& " + ", ".join(dual_bounds) + "\n\\end{array}\n$$"
     return latex_model
 
 with tab_model_primal:
