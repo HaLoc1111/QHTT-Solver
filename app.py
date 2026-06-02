@@ -56,7 +56,7 @@ if st.sidebar.button("🧠 Quét & Tự động điền"):
             
             with st.spinner("🤖 AI đang giải mã chữ viết tay của bạn..."):
                 # CHỈ GỌI DUY NHẤT MODEL CHUẨN ĐỂ LẤY LỖI GỐC
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                model = genai.GenerativeModel('gemini-2.5-flash')
                 
                 try:
                     response = model.generate_content([prompt, image])
