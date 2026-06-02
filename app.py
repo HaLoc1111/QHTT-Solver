@@ -490,8 +490,9 @@ if st.session_state.is_solved:
         with tab3: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig')
         with tab4: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='bland')
 
-
-
+# =========================================================================
+# VŨ KHÍ 4: NHẬN DIỆN ẢNH TOÁN HỌC BẰNG AI (GEMINI VISION)
+# =========================================================================
 st.sidebar.subheader("📸 Quét ảnh bằng AI")
 uploaded_file = st.sidebar.file_uploader("Tải ảnh bài toán (viết tay/chụp)", type=["jpg", "png", "jpeg"])
 
@@ -510,7 +511,6 @@ if st.sidebar.button("🧠 Quét & Tự động điền"):
             import json
 
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
             image = Image.open(uploaded_file)
             
             # Ra lệnh cho AI đọc ảnh và trả về đúng định dạng JSON
@@ -530,19 +530,34 @@ if st.sidebar.button("🧠 Quét & Tự động điền"):
             """
             
             with st.spinner("🤖 AI đang giải mã chữ viết tay của bạn..."):
-                response = model.generate_content([prompt, image])
+                # 🛡️ TUYỆT CHIÊU: Tự động dò tìm tên model AI để chống lỗi 404 Not Found
+                response = None
+                model_names_to_try = ['gemini-1.5-flash-latest', 'gemini-1.5-pro-latest', 'gemini-1.5-flash', 'gemini-pro-vision']
+                
+                for m_name in model_names_to_try:
+                    try:
+                        model = genai.GenerativeModel(m_name)
+                        response = model.generate_content([prompt, image])
+                        break # Nếu đọc thành công thì thoát vòng lặp ngay
+                    except Exception:
+                        continue # Nếu bị lỗi 404, tự động chuyển sang thử model tiếp theo
+                
+                if response is None:
+                    raise Exception("Tất cả các model AI đều bị từ chối bởi Google. Hãy kiểm tra lại API Key.")
                 
                 # Làm sạch chuỗi trả về để parse JSON
                 raw_text = response.text.strip()
                 if raw_text.startswith("```json"):
                     raw_text = raw_text[7:-3].strip()
+                elif raw_text.startswith("```"):
+                    raw_text = raw_text[3:-3].strip()
                     
                 data = json.loads(raw_text)
                 
                 # Cập nhật Session State
-                st.session_state.opt_type = data["opt_type"]
-                st.session_state.n_vars = int(data["n_vars"])
-                st.session_state.n_cons = int(data["n_cons"])
+                st.session_state.opt_type = data.get("opt_type", "MAX").upper()
+                st.session_state.n_vars = int(data.get("n_vars", 2))
+                st.session_state.n_cons = int(data.get("n_cons", 2))
                 
                 # Tạo bảng DataFrame từ dữ liệu AI đọc được
                 obj_cols = [f"x{i+1}" for i in range(st.session_state.n_vars)]
@@ -561,5 +576,6 @@ if st.sidebar.button("🧠 Quét & Tự động điền"):
         except Exception as e:
             st.sidebar.error(f"❌ AI gặp khó khăn khi đọc ảnh: {e}")
     else:
-        st.sidebar.warning("⚠️ Vui lòng tải ảnh lên và nhập API Key!")
+        st.sidebar.warning("⚠️ Vui lòng tải ảnh lên (App đã dùng API Key bí mật)!")
+st.sidebar.markdown("---")
 st.sidebar.markdown("---")
