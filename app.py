@@ -492,13 +492,15 @@ if st.session_state.is_solved:
 
 
 
-
-        # =========================================================================
-# VŨ KHÍ 4: NHẬN DIỆN ẢNH TOÁN HỌC BẰNG AI (GEMINI VISION)
-# =========================================================================
 st.sidebar.subheader("📸 Quét ảnh bằng AI")
-uploaded_file = st.sidebar.file_uploader("Tải ảnh bài toán (viết tay/chụp màn hình)", type=["jpg", "png", "jpeg"])
-api_key = st.sidebar.text_input("Nhập Google Gemini API Key:", type="password", help="Lấy miễn phí tại aistudio.google.com")
+uploaded_file = st.sidebar.file_uploader("Tải ảnh bài toán (viết tay/chụp)", type=["jpg", "png", "jpeg"])
+
+# 🔒 TỰ ĐỘNG LẤY API KEY TỪ HỆ THỐNG BÍ MẬT CỦA STREAMLIT
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except KeyError:
+    api_key = None
+    st.sidebar.error("⚠️ App chưa được cấu hình API Key. Hãy khai báo trong mục Secrets!")
 
 if st.sidebar.button("🧠 Quét & Tự động điền"):
     if uploaded_file is not None and api_key:
