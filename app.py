@@ -73,7 +73,6 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
             """
             with st.spinner("🤖 AI đang phân tích bài toán..."):
                 response = None
-                # FIX BỌC THÉP: Dò tìm từ phiên bản xịn nhất tới phiên bản đời đầu (dành cho mọi API Key)
                 model_names = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
                 
                 for m_name in model_names:
@@ -85,7 +84,7 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                         continue 
                 
                 if response is None:
-                    st.error("❌ Tài khoản Google API của bạn không được cấp quyền cho các model Hình ảnh. Hãy kiểm tra lại API Key.")
+                    st.error("❌ Tài khoản Google API của bạn không hỗ trợ, hoặc kết nối bị lỗi. Hãy kiểm tra lại API Key.")
                 else:
                     raw_text = response.text.strip()
                     backticks = "`" * 3
@@ -95,7 +94,6 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                     
                     data = json.loads(raw_text)
                     
-                    # CẬP NHẬT TRỰC TIẾP VÀO LÕI WIDGET (ÉP SIDEBAR PHẢI NHẢY SỐ THEO AI)
                     st.session_state.opt_input = data.get("opt_type", "MAX").upper()
                     st.session_state.vars_input = int(data.get("n_vars", 2))
                     st.session_state.cons_input = int(data.get("n_cons", 2))
@@ -120,7 +118,7 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
 st.markdown("---")
 
 # =========================================================================
-# GIAO DIỆN SIDEBAR (HIỆN ĐẠI HÓA, TỰ ĐỘNG ĐỒNG BỘ)
+# GIAO DIỆN SIDEBAR
 # =========================================================================
 st.sidebar.header("Cài đặt chung")
 method = st.sidebar.radio(
@@ -179,7 +177,6 @@ if st.sidebar.button("🔄 Đặt lại bảng trống"):
     st.rerun()
 st.sidebar.markdown("---")
 
-# CÁC WIDGET NÀY SẼ LUÔN LUÔN KHỚP VỚI KẾT QUẢ AI VÌ CHUNG CHÌA KHÓA "key"
 st.sidebar.number_input("Số lượng biến", 1, 20, key="vars_input")
 st.sidebar.number_input("Số lượng ràng buộc", 1, 20, key="cons_input")
 st.sidebar.radio("Mục tiêu tối ưu", ("MAX", "MIN"), key="opt_input")
@@ -283,7 +280,7 @@ with tab_model_dual:
     st.markdown(render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds))
 
 # =========================================================================
-# CÁC HÀM XỬ LÝ (CORE LOGIC ĐÃ FIX FULL BUGS)
+# CÁC HÀM XỬ LÝ 
 # =========================================================================
 
 def log_and_print(log, text):
@@ -336,6 +333,7 @@ def solve_graph(c, df_cons, n_vars, opt_type):
     if n_vars != 2:
         st.error("❌ Phương pháp đồ thị chỉ hỗ trợ bài toán có đúng 2 biến (x1, x2).")
         return
+        
     st.write("### 🎚️ Mô phỏng Trượt hàm mục tiêu")
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -355,40 +353,86 @@ def solve_graph(c, df_cons, n_vars, opt_type):
         
         ax.axhline(0, color='black', linewidth=1.5)
         ax.axvline(0, color='black', linewidth=1.5)
+        ax.plot(0, 0, 'ko')
+        ax.text(0.2, -0.5, 'O(0,0)', fontsize=12, fontweight='bold')
         
         colors = ['blue', 'green', 'purple', 'orange']
         for idx, row in df_cons.iterrows():
-            a1, a2 = float(row["x1"]), float(row["x2"])
+            a1 = float(row["x1"]) if not pd.isna(row["x1"]) else 0.0
+            a2 = float(row["x2"]) if not pd.isna(row["x2"]) else 0.0
             rhs = float(row["RHS"]) if not pd.isna(row["RHS"]) else 0.0
             sign = row["Dấu"]
             color = colors[idx % len(colors)]
             
+            if a1 == 0 and a2 == 0: continue # FIX CỨNG: Chống lỗi chia cho 0 
+            
             if a2 != 0:
                 y = (rhs - a1 * d) / a2
-                ax.plot(d, y, color=color, label=f"(PT{idx+1})")
+                ax.plot(d, y, color=color, label=f"(PT{idx+1}): {a1}x1 + {a2}x2 {sign} {rhs}")
+                if rhs/a2 >= 0:
+                    ax.plot(0, rhs/a2, marker='o', color=color)
+                    ax.text(0.2, rhs/a2 + 0.2, f'(0, {rhs/a2:.1f})')
+                if a1 != 0 and rhs/a1 >= 0:
+                    ax.plot(rhs/a1, 0, marker='o', color=color)
+                    ax.text(rhs/a1 + 0.2, 0.2, f'({rhs/a1:.1f}, 0)')
+                    
+                norm_a = np.sqrt(a1**2 + a2**2)
+                if norm_a != 0:
+                    dir_x = -a1 / norm_a if sign == "<=" else a1 / norm_a
+                    dir_y = -a2 / norm_a if sign == "<=" else a2 / norm_a
+                    px = (rhs/a1)/2 if a1 != 0 else 2.0
+                    py = (rhs - a1 * px) / a2
+                    ax.annotate('', xy=(px + dir_x*1.5, py + dir_y*1.5), xytext=(px, py), arrowprops=dict(arrowstyle="->", color=color, lw=2))
             else:
-                if a1 != 0: ax.axvline(x=rhs/a1, color=color, label=f"(PT{idx+1})")
+                ax.axvline(x=rhs/a1, color=color, label=f"(PT{idx+1}): {a1}x1 {sign} {rhs}")
+                dir_x = -1 if sign == "<=" else 1
+                ax.annotate('', xy=(rhs/a1 + dir_x*1.5, 5), xytext=(rhs/a1, 5), arrowprops=dict(arrowstyle="->", color=color, lw=2))
 
             if sign == "<=": mask = mask & (a1 * x1 + a2 * x2 <= rhs)
             elif sign == ">=": mask = mask & (a1 * x1 + a2 * x2 >= rhs)
                 
         ax.imshow(mask.astype(int), extent=(-5, 20, -5, 20), origin="lower", cmap="Greys", alpha=0.3)
-        if c2 != 0:
+        
+        if c1 == 0 and c2 == 0:
+            pass # FIX CỨNG: Chống hàm mục tiêu trống
+        elif c2 != 0:
             y_obj = (current_z - c1 * d) / c2
             ax.plot(d, y_obj, 'r-', linewidth=2.5, label=f"Đường Z = {current_z:.1f}")
-        elif c1 != 0:
+            y_inf_plus = (40.0 - c1 * d) / c2
+            ax.plot(d, y_inf_plus, 'r--', alpha=0.4)
+            y_inf_minus = (-40.0 - c1 * d) / c2
+            ax.plot(d, y_inf_minus, 'b--', alpha=0.4)
+            
+            mid_x = 4.0
+            mid_y = (current_z - c1 * mid_x) / c2
+            norm_c = np.sqrt(c1**2 + c2**2)
+            if norm_c != 0:
+                u = (c1 / norm_c) * 2.0
+                v = (c2 / norm_c) * 2.0
+                ax.annotate('+∞ (Tăng)', xy=(mid_x + u, mid_y + v), xytext=(mid_x, mid_y), arrowprops=dict(facecolor='red', width=1.5, headwidth=8, shrink=0.05), color='red', fontsize=11, fontweight='bold')
+                ax.annotate('-∞ (Giảm)', xy=(mid_x - u, mid_y - v), xytext=(mid_x, mid_y), arrowprops=dict(facecolor='blue', width=1.5, headwidth=8, shrink=0.05), color='blue', fontsize=11, fontweight='bold')
+        else:
             ax.axvline(x=current_z/c1, color='r', linewidth=2.5, label=f"Đường Z = {current_z:.1f}")
+            ax.annotate('+∞ (Tăng)', xy=(current_z/c1 + 2.0, 4.0), xytext=(current_z/c1, 4.0), arrowprops=dict(facecolor='red', width=1.5, headwidth=8, shrink=0.05), color='red', fontsize=11, fontweight='bold')
+            ax.annotate('-∞ (Giảm)', xy=(current_z/c1 - 2.0, 4.0), xytext=(current_z/c1, 4.0), arrowprops=dict(facecolor='blue', width=1.5, headwidth=8, shrink=0.05), color='blue', fontsize=11, fontweight='bold')
 
-        ax.set_xlim(-2, 10); ax.set_ylim(-2, 10)
+        ax.set_xlim(-2, 10)
+        ax.set_ylim(-2, 10)
         ax.grid(True, linestyle='--', alpha=0.6)
+        ax.set_xlabel("x1", fontweight='bold')
+        ax.set_ylabel("x2", fontweight='bold')
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         return fig
 
     if is_auto:
         for val in np.arange(-15.0, 20.0 + 1, 1.0):
-            fig = render_frame(val); plot_container.pyplot(fig); plt.close(fig); time.sleep(0.15) 
+            fig = render_frame(val)
+            plot_container.pyplot(fig)
+            plt.close(fig) 
+            time.sleep(0.15) 
     else:
-        fig = render_frame(z_slider); plot_container.pyplot(fig)
+        fig = render_frame(z_slider)
+        plot_container.pyplot(fig)
 
 def format_dictionary(N, B, A_N, b_B, c_N, v, var_names, enter_j=-1, leave_i=-1, obj_name="Z"):
     z_eq = f"{obj_name} = {v:.2f}"
