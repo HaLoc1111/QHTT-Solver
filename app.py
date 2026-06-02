@@ -74,7 +74,7 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
             with st.spinner("🤖 AI đang phân tích bài toán..."):
                 response = None
                 # FIX BỌC THÉP: Dò tìm từ phiên bản xịn nhất tới phiên bản đời đầu (dành cho mọi API Key)
-                model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro-vision']
+            model_names = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
                 
                 for m_name in model_names:
                     try:
