@@ -14,17 +14,19 @@ st.title("📈 Chương trình giải Quy Hoạch Tuyến Tính Tổng Quát")
 st.markdown("---")
 
 # =========================================================================
-# QUẢN LÝ SESSION STATE BẤT BẠI
+# QUẢN LÝ SESSION STATE BẤT BẠI (CHỐNG RESET BẢNG & ĐỒNG BỘ WIDGET)
 # =========================================================================
 if "n_vars" not in st.session_state: st.session_state.n_vars = 2
 if "n_cons" not in st.session_state: st.session_state.n_cons = 3
 if "opt_type" not in st.session_state: st.session_state.opt_type = "MAX"
+if "vars_input" not in st.session_state: st.session_state.vars_input = 2
+if "cons_input" not in st.session_state: st.session_state.cons_input = 3
+
 if "init_obj" not in st.session_state:
     st.session_state.init_obj = pd.DataFrame([[0.0, 0.0]], columns=["x1", "x2"])
 if "init_cons" not in st.session_state:
     st.session_state.init_cons = pd.DataFrame([[0.0, 0.0, "<=", 0.0] for _ in range(3)], columns=["x1", "x2", "Dấu", "RHS"])
 
-# Đảm bảo bảng luôn khớp với số biến hiện tại
 obj_cols = [f"x{i+1}" for i in range(st.session_state.n_vars)]
 if st.session_state.init_obj.shape[1] != st.session_state.n_vars:
     st.session_state.init_obj = pd.DataFrame([[0.0] * st.session_state.n_vars], columns=obj_cols)
@@ -80,7 +82,6 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                 if response is None:
                     st.error("❌ Google API từ chối kết nối. Hãy kiểm tra lại API Key.")
                 else:
-                    # FIX: Dùng phép nhân chuỗi để vô hiệu hóa lỗi copy-paste markdown
                     raw_text = response.text.strip()
                     backticks = "`" * 3
                     raw_text = raw_text.replace(backticks + "json", "")
@@ -89,9 +90,12 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                     
                     data = json.loads(raw_text)
                     
+                    # CẬP NHẬT ĐỒNG BỘ TOÀN DIỆN (CHỐNG LỖI RESET BẢNG)
                     st.session_state.opt_type = data.get("opt_type", "MAX").upper()
                     st.session_state.n_vars = int(data.get("n_vars", 2))
                     st.session_state.n_cons = int(data.get("n_cons", 2))
+                    st.session_state.vars_input = st.session_state.n_vars 
+                    st.session_state.cons_input = st.session_state.n_cons 
                     
                     new_obj_cols = [f"x{i+1}" for i in range(st.session_state.n_vars)]
                     st.session_state.init_obj = pd.DataFrame([data["obj"]], columns=new_obj_cols)
@@ -121,28 +125,69 @@ method = st.sidebar.radio(
 )
 st.sidebar.markdown("---")
 
+# =========================================================================
+# VŨ KHÍ CHỐNG F5: SAO LƯU VÀ PHỤC HỒI PHIÊN LÀM VIỆC
+# =========================================================================
+st.sidebar.subheader("💾 Sao lưu & Phục hồi (Chống F5)")
+st.sidebar.info("Lỡ tay F5 mất dữ liệu? Lưu tiến trình lại tại đây và up lên để khôi phục nhé!")
+
+backup_data = {
+    "n_vars": st.session_state.n_vars,
+    "n_cons": st.session_state.n_cons,
+    "opt_type": st.session_state.opt_type,
+    "obj": st.session_state.init_obj.values.tolist(),
+    "cons": st.session_state.init_cons.values.tolist()
+}
+json_backup = json.dumps(backup_data)
+st.sidebar.download_button(label="📥 Tải file Lưu Tiến Trình", data=json_backup, file_name="backup_qhtt.json", mime="application/json")
+
+restore_file = st.sidebar.file_uploader("📤 Phục hồi dữ liệu từ file", type=["json"])
+if restore_file is not None:
+    try:
+        restored = json.load(restore_file)
+        st.session_state.n_vars = restored["n_vars"]
+        st.session_state.n_cons = restored["n_cons"]
+        st.session_state.vars_input = restored["n_vars"]
+        st.session_state.cons_input = restored["n_cons"]
+        st.session_state.opt_type = restored["opt_type"]
+        
+        obj_cols_res = [f"x{i+1}" for i in range(st.session_state.n_vars)]
+        st.session_state.init_obj = pd.DataFrame(restored["obj"], columns=obj_cols_res)
+        st.session_state.init_cons = pd.DataFrame(restored["cons"], columns=obj_cols_res + ["Dấu", "RHS"])
+        
+        st.sidebar.success("✅ Đã khôi phục dữ liệu thành công!")
+        time.sleep(1.5)
+        st.rerun()
+    except Exception as e:
+        st.sidebar.error("❌ File không hợp lệ.")
+
+st.sidebar.markdown("---")
+
 st.sidebar.subheader("📂 Quản lý dữ liệu mẫu")
-if st.sidebar.button("📝 Tải mẫu 1 Pha (RHS >= 0)", help="Điền bài toán cơ bản (RHS dương). Dùng test Đơn hình 1 pha."):
+if st.sidebar.button("📝 Tải mẫu 1 Pha (RHS >= 0)"):
     st.session_state.n_vars, st.session_state.n_cons, st.session_state.opt_type = 2, 3, "MAX"
+    st.session_state.vars_input, st.session_state.cons_input = 2, 3
     st.session_state.init_obj = pd.DataFrame([[2.0, 5.0]], columns=["x1", "x2"])
     st.session_state.init_cons = pd.DataFrame([[1.0, 0.0, "<=", 4.0], [0.0, 2.0, "<=", 12.0], [3.0, 2.0, "<=", 18.0]], columns=["x1", "x2", "Dấu", "RHS"])
     st.rerun()
 
-if st.sidebar.button("📚 Tải mẫu 2 Pha (Trong vở ghi)", help="Điền bài toán suy biến (RHS âm). Dùng test tính năng Đơn hình 2 pha."):
+if st.sidebar.button("📚 Tải mẫu 2 Pha (Trong vở ghi)"):
     st.session_state.n_vars, st.session_state.n_cons, st.session_state.opt_type = 2, 3, "MIN"
+    st.session_state.vars_input, st.session_state.cons_input = 2, 3
     st.session_state.init_obj = pd.DataFrame([[1.0, 2.0]], columns=["x1", "x2"])
     st.session_state.init_cons = pd.DataFrame([[-1.0, 1.0, "<=", -2.0], [-1.0, -2.0, "<=", -4.0], [0.0, 1.0, "<=", 2.0]], columns=["x1", "x2", "Dấu", "RHS"])
     st.rerun()
 
-if st.sidebar.button("🔄 Đặt lại bảng trống", help="Xóa sạch dữ liệu."):
+if st.sidebar.button("🔄 Đặt lại bảng trống"):
     st.session_state.n_vars, st.session_state.n_cons, st.session_state.opt_type = 2, 3, "MAX"
+    st.session_state.vars_input, st.session_state.cons_input = 2, 3
     st.session_state.init_obj = pd.DataFrame([[0.0, 0.0]], columns=["x1", "x2"])
     st.session_state.init_cons = pd.DataFrame([[0.0, 0.0, "<=", 0.0] for _ in range(3)], columns=["x1", "x2", "Dấu", "RHS"])
     st.rerun()
 st.sidebar.markdown("---")
 
-new_n_vars = st.sidebar.number_input("Số lượng biến", 1, 20, st.session_state.n_vars, key="vars_input")
-new_n_cons = st.sidebar.number_input("Số lượng ràng buộc", 1, 20, st.session_state.n_cons, key="cons_input")
+new_n_vars = st.sidebar.number_input("Số lượng biến", 1, 20, st.session_state.vars_input, key="vars_input")
+new_n_cons = st.sidebar.number_input("Số lượng ràng buộc", 1, 20, st.session_state.cons_input, key="cons_input")
 if new_n_vars != st.session_state.n_vars or new_n_cons != st.session_state.n_cons:
     st.session_state.n_vars = new_n_vars
     st.session_state.n_cons = new_n_cons
@@ -152,14 +197,16 @@ opt_type = st.sidebar.radio("Mục tiêu tối ưu", ("MAX", "MIN"), index=0 if 
 st.session_state.opt_type = opt_type
 
 # =========================================================================
-# GIAO DIỆN NHẬP LIỆU CHÍNH
+# GIAO DIỆN NHẬP LIỆU CHÍNH (ĐÃ FIX LƯU TRỰC TIẾP VÀO SESSION)
 # =========================================================================
 st.subheader("1. Hàm mục tiêu $f(x)$")
-df_obj = st.data_editor(st.session_state.init_obj, hide_index=True, use_container_width=True)
+st.session_state.init_obj = st.data_editor(st.session_state.init_obj, hide_index=True, use_container_width=True)
+df_obj = st.session_state.init_obj
 
 st.subheader("2. Hệ ràng buộc")
 config = {"Dấu": st.column_config.SelectboxColumn("Dấu", options=["<=", ">=", "="], required=True)}
-df_cons = st.data_editor(st.session_state.init_cons, column_config=config, hide_index=True, use_container_width=True)
+st.session_state.init_cons = st.data_editor(st.session_state.init_cons, column_config=config, hide_index=True, use_container_width=True)
+df_cons = st.session_state.init_cons
 
 st.subheader("3. Ràng buộc dấu của biến")
 bounds = []
@@ -248,7 +295,7 @@ with tab_model_dual:
     st.markdown(render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds))
 
 # =========================================================================
-# CÁC HÀM XỬ LÝ (CORE LOGIC ĐÃ FIX FULL BUGS)
+# CÁC HÀM XỬ LÝ
 # =========================================================================
 
 def log_and_print(log, text):
