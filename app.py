@@ -4,7 +4,6 @@ import numpy as np
 from scipy.optimize import linprog
 import matplotlib.pyplot as plt
 import time
-import json
 
 st.set_page_config(page_title="Giải thuật QHTT", layout="wide", page_icon="📈")
 
@@ -14,9 +13,12 @@ st.markdown("---")
 # =========================================================================
 # QUẢN LÝ SESSION STATE
 # =========================================================================
-if "n_vars" not in st.session_state: st.session_state.n_vars = 2
-if "n_cons" not in st.session_state: st.session_state.n_cons = 3
-if "opt_type" not in st.session_state: st.session_state.opt_type = "MAX"
+if "n_vars" not in st.session_state:
+    st.session_state.n_vars = 2
+if "n_cons" not in st.session_state:
+    st.session_state.n_cons = 3
+if "opt_type" not in st.session_state:
+    st.session_state.opt_type = "MAX"
 if "init_obj" not in st.session_state:
     st.session_state.init_obj = pd.DataFrame([[0.0, 0.0]], columns=["x1", "x2"])
 if "init_cons" not in st.session_state:
@@ -28,72 +30,6 @@ method = st.sidebar.radio(
     "CHỌN PHƯƠNG PHÁP GIẢI:",
     ("1. Scipy (Tổng quát, nhanh)", "2. Đồ thị (Chỉ 2 biến)", "3. Từ vựng (Đơn hình Dantzig)", "4. Từ vựng (Đơn hình Bland)", "5. Chạy tất cả (So sánh)")
 )
-st.sidebar.markdown("---")
-
-# =========================================================================
-# VŨ KHÍ 4: NHẬN DIỆN ẢNH BẰNG AI (GOOGLE GEMINI)
-# =========================================================================
-st.sidebar.subheader("📸 Quét ảnh bằng AI")
-uploaded_file = st.sidebar.file_uploader("Tải ảnh bài toán (viết tay/chụp)", type=["jpg", "png", "jpeg"])
-
-# 🔒 TỰ ĐỘNG LẤY API KEY TỪ HỆ THỐNG BÍ MẬT CỦA STREAMLIT
-try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-except KeyError:
-    api_key = None
-    st.sidebar.error("⚠️ App chưa được cấu hình API Key. Hãy khai báo trong mục Settings > Secrets!")
-
-if st.sidebar.button("🧠 Quét & Tự động điền"):
-    if uploaded_file is not None and api_key:
-        try:
-            import google.generativeai as genai
-            from PIL import Image
-
-            genai.configure(api_key=api_key)
-            image = Image.open(uploaded_file)
-            
-            prompt = "Bạn là chuyên gia Toán học. Hãy đọc bài toán Quy hoạch tuyến tính trong ảnh.\nTrả về DUY NHẤT một JSON hợp lệ (không có markdown, không có text khác) với cấu trúc:\n{\n\"opt_type\": \"MAX\" hoặc \"MIN\",\n\"n_vars\": số nguyên (số lượng biến),\n\"n_cons\": số nguyên (số lượng ràng buộc),\n\"obj\": [mảng số thực chứa các hệ số hàm mục tiêu],\n\"cons\": [\n{\"coeffs\": [mảng hệ số], \"sign\": \"<=\" hoặc \">=\" hoặc \"=\", \"rhs\": số vế phải}\n]\n}"
-            
-            with st.spinner("🤖 AI đang giải mã chữ viết tay của bạn..."):
-                # CHỈ GỌI DUY NHẤT MODEL CHUẨN ĐỂ LẤY LỖI GỐC
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                
-                try:
-                    response = model.generate_content([prompt, image])
-                except Exception as api_err:
-                    st.error(f"🛑 LỖI TỪ GOOGLE: {api_err}")
-                    st.stop()
-                
-                # Làm sạch chuỗi JSON an toàn
-                raw_text = response.text.strip()
-                raw_text = raw_text.replace("```json", "")
-                raw_text = raw_text.replace("```", "")
-                raw_text = raw_text.strip()
-                    
-                data = json.loads(raw_text)
-                
-                st.session_state.opt_type = data.get("opt_type", "MAX").upper()
-                st.session_state.n_vars = int(data.get("n_vars", 2))
-                st.session_state.n_cons = int(data.get("n_cons", 2))
-                
-                obj_cols = [f"x{i+1}" for i in range(st.session_state.n_vars)]
-                st.session_state.init_obj = pd.DataFrame([data["obj"]], columns=obj_cols)
-                
-                cons_data = []
-                for c in data["cons"]:
-                    row = c["coeffs"] + [c["sign"], float(c["rhs"])]
-                    cons_data.append(row)
-                st.session_state.init_cons = pd.DataFrame(cons_data, columns=obj_cols + ["Dấu", "RHS"])
-                
-                st.sidebar.success("✨ Nhận diện thành công! Dữ liệu đã được điền.")
-                time.sleep(1.5)
-                st.rerun()
-
-        except Exception as e:
-            st.sidebar.error(f"❌ Lỗi code xử lý: {e}")
-    else:
-        st.sidebar.warning("⚠️ Vui lòng tải ảnh lên trước nhé!")
-
 st.sidebar.markdown("---")
 
 st.sidebar.subheader("📂 Quản lý dữ liệu mẫu")
@@ -163,12 +99,11 @@ def render_math_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds):
     
     bound_terms = [f"x_{i+1} \\ge 0" if b==(0,None) else (f"x_{i+1} \\le 0" if b==(None,0) else f"x_{i+1} \\text{{ tùy ý}}") for i, b in enumerate(bounds)]
     
-    # Đã sửa triệt để lỗi NameError bằng cách tách chuỗi nối tay
     latex_model = "$$\n\\begin{array}{ll}\n"
-    latex_model += "\\text{Tối ưu hóa:} & \\" + opt_type.lower() + f" \\quad Z = {obj_str if obj_str else '0'} \\\\\n"
+    latex_model += f"\\text{{Tối ưu hóa:}} & \\{opt_type.lower()} \\quad Z = {obj_str if obj_str else '0'} \\\\\n"
     latex_model += "\\text{Thỏa mãn:} & \\left\\{\n\\begin{array}{l}\n"
     latex_model += r" \\ ".join(cons_lines) + "\n\\end{array}\n\\right. \\\\\n"
-    latex_model += "& " + ", ".join(bound_terms) + "\n\\end{array}\n$$" 
+    latex_model += f"& {', '.join(bound_terms)}\n\\end{{array}}\n$$" 
     return latex_model
 
 def render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds):
@@ -208,12 +143,11 @@ def render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds):
             elif s == "<=": dual_bounds.append(f"y_{i+1} \\le 0")
             else: dual_bounds.append(f"y_{i+1} \\text{{ tùy ý}}")
 
-    # Đã sửa triệt để lỗi NameError
     latex_model = "$$\n\\begin{array}{ll}\n"
-    latex_model += "\\text{Bài toán Đối ngẫu:} & \\" + dual_opt.lower() + f" \\quad W = {dual_obj_str if dual_obj_str else '0'} \\\\\n"
+    latex_model += f"\\text{{Bài toán Đối ngẫu:}} & \\{dual_opt.lower()} \\quad W = {dual_obj_str if dual_obj_str else '0'} \\\\\n"
     latex_model += "\\text{Thỏa mãn:} & \\left\\{\n\\begin{array}{l}\n"
     latex_model += r" \\ ".join(dual_cons_lines) + "\n\\end{array}\n\\right. \\\\\n"
-    latex_model += "& " + ", ".join(dual_bounds) + "\n\\end{array}\n$$"
+    latex_model += f"& {', '.join(dual_bounds)}\n\\end{{array}}\n$$"
     return latex_model
 
 with tab_model_primal:
@@ -251,12 +185,12 @@ def solve_scipy(c, df_cons, obj_cols, opt_type, bounds):
         
         col1, col2 = st.columns(2)
         with col1:
-            st.write("🎯 **Chiến lược hành động:**")
-            st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Số lượng": np.round(res.x, 4)}))
-            st.info("💡 **Giải thích:** Đây là phương án sản xuất tốt nhất của bạn.")
+            st.write("🎯 **Chiến lược hành động (Nghiệm tối ưu):**")
+            st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Số lượng cần làm": np.round(res.x, 4)}))
+            st.info("💡 **Giải thích:** Bảng trên cho bạn biết chính xác cần phân bổ nguồn lực để đạt được kết quả tốt nhất.")
             
         with col2:
-            st.write("📊 **Giá mờ (Shadow Prices):**")
+            st.write("📊 **Phân tích độ nhạy (Shadow Prices - Giá mờ):**")
             shadow_prices = []
             if hasattr(res, 'ineqlin') and hasattr(res.ineqlin, 'marginals'):
                 shadow_prices.extend(res.ineqlin.marginals)
@@ -265,19 +199,30 @@ def solve_scipy(c, df_cons, obj_cols, opt_type, bounds):
             
             if shadow_prices:
                 sp_vals = np.round(np.abs(shadow_prices), 4) 
-                sp_df = pd.DataFrame({"PT": [f"PT {i+1}" for i in range(len(sp_vals))], "Giá mờ": sp_vals})
+                sp_df = pd.DataFrame({"Ràng buộc (PT)": [f"PT {i+1}" for i in range(len(sp_vals))], "Giá mờ": sp_vals})
                 st.dataframe(sp_df)
+                
+                st.write("🗣️ **Lời khuyên thực tế (Dành cho người kinh doanh):**")
+                for i, sp in enumerate(sp_vals):
+                    if sp > 1e-4:
+                        if opt_type == "MAX":
+                            advice = f"- **PT {i+1}:** Cứ thêm 1 đơn vị nguồn lực này, lợi nhuận tăng `{sp}`. 👉 *Chỉ mua thêm nếu giá rẻ hơn {sp}*."
+                        else:
+                            advice = f"- **PT {i+1}:** Nới lỏng giới hạn này 1 đơn vị, chi phí giảm `{sp}`. 👉 *Nên mở rộng nếu chi phí mở rộng rẻ hơn {sp}*."
+                        st.markdown(advice)
+                    else:
+                        st.markdown(f"- **PT {i+1}:** Nguồn lực đang **DƯ THỪA**. 👉 *KHÔNG tốn tiền mua thêm.*")
             else:
-                st.write("Không trích xuất được Giá mờ.")
+                st.write("Không trích xuất được Giá mờ cho mô hình này.")
     else:
         if res.status == 3:
             st.error("❌ BÀI TOÁN KHÔNG GIỚI HẠN (UNBOUNDED)!")
-            st.write("Miền nghiệm mở toang tới vô cực, hàm mục tiêu không có giới hạn.")
+            st.write("Vùng khả thi bị mở toang. Lợi nhuận của bạn có thể tăng đến vô cực. Hãy kiểm tra lại các ràng buộc!")
         elif res.status == 2:
             st.error("❌ BÀI TOÁN VÔ NGHIỆM (INFEASIBLE)!")
-            st.write("Không có vùng khả thi thỏa mãn các ràng buộc này.")
+            st.write("Các điều kiện bạn đưa ra đang mâu thuẫn nhau. Không có cách nào thực hiện được!")
         else:
-            st.error(f"❌ Lỗi: {res.message}")
+            st.error(f"❌ Lỗi chưa xác định từ bộ giải: {res.message}")
 
 def solve_graph(c, df_cons, n_vars, opt_type):
     if n_vars != 2:
@@ -304,6 +249,7 @@ def solve_graph(c, df_cons, n_vars, opt_type):
         ax.axhline(0, color='black', linewidth=1.5)
         ax.axvline(0, color='black', linewidth=1.5)
         ax.plot(0, 0, 'ko')
+        ax.text(0.2, -0.5, 'O(0,0)', fontsize=12, fontweight='bold')
         
         colors = ['blue', 'green', 'purple', 'orange']
         for idx, row in df_cons.iterrows():
@@ -315,8 +261,24 @@ def solve_graph(c, df_cons, n_vars, opt_type):
             if a2 != 0:
                 y = (rhs - a1 * d) / a2
                 ax.plot(d, y, color=color, label=f"(PT{idx+1}): {a1}x1 + {a2}x2 {sign} {rhs}")
+                if rhs/a2 >= 0:
+                    ax.plot(0, rhs/a2, marker='o', color=color)
+                    ax.text(0.2, rhs/a2 + 0.2, f'(0, {rhs/a2:.1f})')
+                if a1 != 0 and rhs/a1 >= 0:
+                    ax.plot(rhs/a1, 0, marker='o', color=color)
+                    ax.text(rhs/a1 + 0.2, 0.2, f'({rhs/a1:.1f}, 0)')
+                    
+                norm_a = np.sqrt(a1**2 + a2**2)
+                if norm_a != 0:
+                    dir_x = -a1 / norm_a if sign == "<=" else a1 / norm_a
+                    dir_y = -a2 / norm_a if sign == "<=" else a2 / norm_a
+                    px = (rhs/a1)/2 if a1 != 0 else 2.0
+                    py = (rhs - a1 * px) / a2
+                    ax.annotate('', xy=(px + dir_x*1.5, py + dir_y*1.5), xytext=(px, py), arrowprops=dict(arrowstyle="->", color=color, lw=2))
             else:
                 ax.axvline(x=rhs/a1, color=color, label=f"(PT{idx+1}): {a1}x1 {sign} {rhs}")
+                dir_x = -1 if sign == "<=" else 1
+                ax.annotate('', xy=(rhs/a1 + dir_x*1.5, 5), xytext=(rhs/a1, 5), arrowprops=dict(arrowstyle="->", color=color, lw=2))
 
             if sign == "<=": mask = mask & (a1 * x1 + a2 * x2 <= rhs)
             elif sign == ">=": mask = mask & (a1 * x1 + a2 * x2 >= rhs)
@@ -326,10 +288,25 @@ def solve_graph(c, df_cons, n_vars, opt_type):
         if c2 != 0:
             y_obj = (current_z - c1 * d) / c2
             ax.plot(d, y_obj, 'r-', linewidth=2.5, label=f"Đường Z = {current_z:.1f}")
+            y_inf_plus = (40.0 - c1 * d) / c2
+            ax.plot(d, y_inf_plus, 'r--', alpha=0.4)
+            y_inf_minus = (-40.0 - c1 * d) / c2
+            ax.plot(d, y_inf_minus, 'b--', alpha=0.4)
+            
+            mid_x = 4.0
+            mid_y = (current_z - c1 * mid_x) / c2
+            norm_c = np.sqrt(c1**2 + c2**2)
+            if norm_c != 0:
+                u = (c1 / norm_c) * 2.0
+                v = (c2 / norm_c) * 2.0
+                ax.annotate('+∞ (Tăng)', xy=(mid_x + u, mid_y + v), xytext=(mid_x, mid_y), arrowprops=dict(facecolor='red', width=1.5, headwidth=8, shrink=0.05), color='red', fontsize=11, fontweight='bold')
+                ax.annotate('-∞ (Giảm)', xy=(mid_x - u, mid_y - v), xytext=(mid_x, mid_y), arrowprops=dict(facecolor='blue', width=1.5, headwidth=8, shrink=0.05), color='blue', fontsize=11, fontweight='bold')
 
         ax.set_xlim(-2, 10)
         ax.set_ylim(-2, 10)
         ax.grid(True, linestyle='--', alpha=0.6)
+        ax.set_xlabel("x1", fontweight='bold')
+        ax.set_ylabel("x2", fontweight='bold')
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         return fig
 
@@ -512,3 +489,96 @@ if st.session_state.is_solved:
         with tab2: solve_graph(c, df_cons, n_vars, opt_type)
         with tab3: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig')
         with tab4: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='bland')
+
+
+# =========================================================================
+# VŨ KHÍ 4: NHẬN DIỆN ẢNH TOÁN HỌC BẰNG AI (GEMINI VISION)
+# =========================================================================
+st.sidebar.subheader("📸 Quét ảnh bằng AI")
+uploaded_file = st.sidebar.file_uploader("Tải ảnh bài toán (viết tay/chụp)", type=["jpg", "png", "jpeg"])
+
+# 🔒 TỰ ĐỘNG LẤY API KEY TỪ HỆ THỐNG BÍ MẬT CỦA STREAMLIT
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except KeyError:
+    api_key = None
+    st.sidebar.error("⚠️ App chưa được cấu hình API Key. Hãy khai báo trong mục Secrets!")
+
+if st.sidebar.button("🧠 Quét & Tự động điền"):
+    if uploaded_file is not None and api_key:
+        try:
+            import google.generativeai as genai
+            from PIL import Image
+            import json
+
+            genai.configure(api_key=api_key)
+            image = Image.open(uploaded_file)
+            
+            # Ra lệnh cho AI đọc ảnh và trả về đúng định dạng JSON
+            prompt = """
+            Bạn là chuyên gia Toán Quy hoạch tuyến tính. Hãy đọc bài toán trong ảnh này.
+            Trả về DUY NHẤT một chuỗi JSON chuẩn (không có markdown code block, không có text dư thừa) với cấu trúc:
+            {
+                "opt_type": "MAX" hoặc "MIN",
+                "n_vars": số_lượng_biến,
+                "n_cons": số_lượng_ràng_buộc,
+                "obj": [hệ_số_1, hệ_số_2, ...],
+                "cons": [
+                    {"coeffs": [hệ_số_1, hệ_số_2, ...], "sign": "<=" hoặc ">=" hoặc "=", "rhs": số_vế_phải},
+                    ...
+                ]
+            }
+            """
+            
+            with st.spinner("🤖 AI đang giải mã chữ viết tay của bạn..."):
+                # 🛡️ TUYỆT CHIÊU: Tự động dò tìm tên model AI để chống lỗi 404 Not Found
+                response = None
+                
+                # 👉 ĐÃ CẬP NHẬT: Ưu tiên dùng các model Gemini 2.5 và 2.0 mới nhất
+                model_names_to_try = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash']
+                
+                for m_name in model_names_to_try:
+                    try:
+                        model = genai.GenerativeModel(m_name)
+                        response = model.generate_content([prompt, image])
+                        break # Nếu đọc thành công thì thoát vòng lặp ngay
+                    except Exception as e:
+                        # Log lỗi ẩn để debug nghiệm ngầm nếu muốn, tự động nhảy sang model tiếp theo
+                        continue 
+                
+                if response is None:
+                    raise Exception("Tất cả các model AI đều bị từ chối bởi Google. Hãy kiểm tra lại API Key hoặc version thư viện.")
+                
+                # Làm sạch chuỗi trả về để parse JSON
+                raw_text = response.text.strip()
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text[7:-3].strip()
+                elif raw_text.startswith("```"):
+                    raw_text = raw_text[3:-3].strip()
+                    
+                data = json.loads(raw_text)
+                
+                # Cập nhật Session State
+                st.session_state.opt_type = data.get("opt_type", "MAX").upper()
+                st.session_state.n_vars = int(data.get("n_vars", 2))
+                st.session_state.n_cons = int(data.get("n_cons", 2))
+                
+                # Tạo bảng DataFrame từ dữ liệu AI đọc được
+                obj_cols = [f"x{i+1}" for i in range(st.session_state.n_vars)]
+                st.session_state.init_obj = pd.DataFrame([data["obj"]], columns=obj_cols)
+                
+                cons_data = []
+                for c in data["cons"]:
+                    row = c["coeffs"] + [c["sign"], float(c["rhs"])]
+                    cons_data.append(row)
+                st.session_state.init_cons = pd.DataFrame(cons_data, columns=obj_cols + ["Dấu", "RHS"])
+                
+                st.sidebar.success("✨ Nhận diện thành công!")
+                time.sleep(1)
+                st.rerun()
+
+        except Exception as e:
+            st.sidebar.error(f"❌ AI gặp khó khăn khi đọc ảnh: {e}")
+    else:
+        st.sidebar.warning("⚠️ Vui lòng tải ảnh lên (App đã dùng API Key bí mật)!")
+st.sidebar.markdown("---")
