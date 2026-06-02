@@ -489,3 +489,75 @@ if st.session_state.is_solved:
         with tab2: solve_graph(c, df_cons, n_vars, opt_type)
         with tab3: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig')
         with tab4: solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='bland')
+
+
+
+
+        # =========================================================================
+# VŨ KHÍ 4: NHẬN DIỆN ẢNH TOÁN HỌC BẰNG AI (GEMINI VISION)
+# =========================================================================
+st.sidebar.subheader("📸 Quét ảnh bằng AI")
+uploaded_file = st.sidebar.file_uploader("Tải ảnh bài toán (viết tay/chụp màn hình)", type=["jpg", "png", "jpeg"])
+api_key = st.sidebar.text_input("Nhập Google Gemini API Key:", type="password", help="Lấy miễn phí tại aistudio.google.com")
+
+if st.sidebar.button("🧠 Quét & Tự động điền"):
+    if uploaded_file is not None and api_key:
+        try:
+            import google.generativeai as genai
+            from PIL import Image
+            import json
+
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            image = Image.open(uploaded_file)
+            
+            # Ra lệnh cho AI đọc ảnh và trả về đúng định dạng JSON
+            prompt = """
+            Bạn là chuyên gia Toán Quy hoạch tuyến tính. Hãy đọc bài toán trong ảnh này.
+            Trả về DUY NHẤT một chuỗi JSON chuẩn (không có markdown code block, không có text dư thừa) với cấu trúc:
+            {
+                "opt_type": "MAX" hoặc "MIN",
+                "n_vars": số_lượng_biến,
+                "n_cons": số_lượng_ràng_buộc,
+                "obj": [hệ_số_1, hệ_số_2, ...],
+                "cons": [
+                    {"coeffs": [hệ_số_1, hệ_số_2, ...], "sign": "<=" hoặc ">=" hoặc "=", "rhs": số_vế_phải},
+                    ...
+                ]
+            }
+            """
+            
+            with st.spinner("🤖 AI đang giải mã chữ viết tay của bạn..."):
+                response = model.generate_content([prompt, image])
+                
+                # Làm sạch chuỗi trả về để parse JSON
+                raw_text = response.text.strip()
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text[7:-3].strip()
+                    
+                data = json.loads(raw_text)
+                
+                # Cập nhật Session State
+                st.session_state.opt_type = data["opt_type"]
+                st.session_state.n_vars = int(data["n_vars"])
+                st.session_state.n_cons = int(data["n_cons"])
+                
+                # Tạo bảng DataFrame từ dữ liệu AI đọc được
+                obj_cols = [f"x{i+1}" for i in range(st.session_state.n_vars)]
+                st.session_state.init_obj = pd.DataFrame([data["obj"]], columns=obj_cols)
+                
+                cons_data = []
+                for c in data["cons"]:
+                    row = c["coeffs"] + [c["sign"], float(c["rhs"])]
+                    cons_data.append(row)
+                st.session_state.init_cons = pd.DataFrame(cons_data, columns=obj_cols + ["Dấu", "RHS"])
+                
+                st.sidebar.success("✨ Nhận diện thành công!")
+                time.sleep(1)
+                st.rerun()
+
+        except Exception as e:
+            st.sidebar.error(f"❌ AI gặp khó khăn khi đọc ảnh: {e}")
+    else:
+        st.sidebar.warning("⚠️ Vui lòng tải ảnh lên và nhập API Key!")
+st.sidebar.markdown("---")
