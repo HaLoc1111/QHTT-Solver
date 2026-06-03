@@ -5,16 +5,34 @@ from scipy.optimize import linprog
 import matplotlib.pyplot as plt
 import time
 import json
+import os
+from datetime import datetime
 
 # =========================================================================
-# CẤU HÌNH TRANG CHỦ
+# CẤU HÌNH TRANG CHỦ & HỆ THỐNG LƯU TRỮ LỊCH SỬ
 # =========================================================================
 st.set_page_config(page_title="Giải thuật QHTT", layout="wide", page_icon="📈")
+
+HISTORY_FILE = "qhtt_history.json"
+
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_history(history_dict):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history_dict, f, ensure_ascii=False, indent=4)
+
+if "history" not in st.session_state:
+    st.session_state.history = load_history()
+
 st.title("📈 Chương trình giải Quy Hoạch Tuyến Tính Tổng Quát")
 st.markdown("---")
 
 # =========================================================================
-# QUẢN LÝ LÕI BỘ NHỚ (HÀN CHẾT ĐỒNG BỘ UI - CHỐNG LỖI HIỂN THỊ)
+# QUẢN LÝ LÕI BỘ NHỚ
 # =========================================================================
 if "vars_input" not in st.session_state: st.session_state.vars_input = 2
 if "cons_input" not in st.session_state: st.session_state.cons_input = 3
@@ -39,7 +57,7 @@ if st.session_state.init_cons.shape[0] != n_cons or st.session_state.init_cons.s
 # GIAO DIỆN CHÍNH: QUÉT ẢNH AI 
 # =========================================================================
 st.markdown("### 📸 1. Tự động nhập đề bằng AI (Upload Ảnh)")
-st.info("💡 Tải ảnh bài toán lên đây. AI sẽ phân tích và tự động đồng bộ mọi dữ liệu (kể cả Sidebar)!")
+st.info("💡 Tải ảnh bài toán lên đây. AI sẽ phân tích và tự động điền vào bảng bên dưới!")
 uploaded_file = st.file_uploader("Kéo thả hoặc chọn ảnh...", type=["jpg", "png", "jpeg"])
 
 try:
@@ -53,132 +71,102 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
         try:
             import google.generativeai as genai
             from PIL import Image
-
             genai.configure(api_key=api_key)
             image = Image.open(uploaded_file)
             
             prompt = """
             Bạn là chuyên gia Toán Quy hoạch tuyến tính. Hãy đọc bài toán trong ảnh.
             Trả về DUY NHẤT một chuỗi JSON hợp lệ (không markdown, không text dư) với cấu trúc:
-            {
-                "opt_type": "MAX" hoặc "MIN",
-                "n_vars": số_nguyên,
-                "n_cons": số_nguyên,
-                "obj": [mảng_hệ_số_hàm_mục_tiêu],
-                "cons": [
-                    {"coeffs": [mảng_hệ_số], "sign": "<=" hoặc ">=" hoặc "=", "rhs": số_vế_phải}
-                ]
-            }
+            {"opt_type": "MAX" hoặc "MIN", "n_vars": số, "n_cons": số, "obj": [mảng], "cons": [{"coeffs": [mảng], "sign": "<=", "rhs": số}]}
             """
             with st.spinner("🤖 AI đang phân tích bài toán..."):
                 response = None
-                model_names = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
-                
-                for m_name in model_names:
+                for m_name in ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']:
                     try:
-                        model = genai.GenerativeModel(m_name)
-                        response = model.generate_content([prompt, image])
+                        response = genai.GenerativeModel(m_name).generate_content([prompt, image])
                         break
-                    except Exception:
-                        continue 
+                    except Exception: continue 
                 
-                if response is None:
-                    st.error("❌ Tài khoản Google API của bạn không hỗ trợ, hoặc kết nối bị lỗi. Hãy kiểm tra lại API Key.")
-                else:
-                    raw_text = response.text.strip()
-                    backticks = "`" * 3
-                    raw_text = raw_text.replace(backticks + "json", "")
-                    raw_text = raw_text.replace(backticks, "")
-                    raw_text = raw_text.strip()
-                    
+                if response:
+                    raw_text = response.text.strip().replace("```json", "").replace("```", "").strip()
                     data = json.loads(raw_text)
                     
                     st.session_state.opt_input = data.get("opt_type", "MAX").upper()
                     st.session_state.vars_input = int(data.get("n_vars", 2))
                     st.session_state.cons_input = int(data.get("n_cons", 2))
                     
-                    new_n_vars_ai = st.session_state.vars_input
-                    new_obj_cols = [f"x{i+1}" for i in range(new_n_vars_ai)]
+                    new_obj_cols = [f"x{i+1}" for i in range(st.session_state.vars_input)]
                     st.session_state.init_obj = pd.DataFrame([data["obj"]], columns=new_obj_cols)
                     
-                    cons_data = []
-                    for c in data["cons"]:
-                        cons_data.append(c["coeffs"] + [c["sign"], float(c["rhs"])])
+                    cons_data = [c["coeffs"] + [c["sign"], float(c["rhs"])] for c in data["cons"]]
                     st.session_state.init_cons = pd.DataFrame(cons_data, columns=new_obj_cols + ["Dấu", "RHS"])
                     
-                    st.success("✨ Nhận diện thành công! Dữ liệu bảng và Sidebar đã được cập nhật đồng bộ.")
-                    time.sleep(1.5)
+                    st.success("✨ Nhận diện thành công!")
+                    time.sleep(1)
                     st.rerun()
-        except Exception as e:
-            st.error(f"❌ AI gặp lỗi khi đọc ảnh: {e}")
-    else:
-        st.warning("⚠️ Bạn chưa tải ảnh lên!")
-
+        except Exception as e: st.error(f"❌ Lỗi: {e}")
+    else: st.warning("⚠️ Bạn chưa tải ảnh lên!")
 st.markdown("---")
 
 # =========================================================================
-# GIAO DIỆN SIDEBAR (HIỆN ĐẠI HÓA, TỰ ĐỘNG ĐỒNG BỘ)
+# GIAO DIỆN SIDEBAR CHATGPT-STYLE (LỊCH SỬ & CÀI ĐẶT)
 # =========================================================================
-st.sidebar.header("Cài đặt chung")
-method = st.sidebar.radio(
-    "CHỌN PHƯƠNG PHÁP GIẢI:",
-    ("1. Scipy (Tổng quát, nhanh)", "2. Đồ thị (Chỉ 2 biến)", "3. Từ vựng (Đơn hình Dantzig)", "4. Từ vựng (Đơn hình Bland)", "5. Chạy tất cả (So sánh)")
-)
-st.sidebar.markdown("---")
+st.sidebar.markdown("## 🕒 Gần đây (Lịch sử)")
 
-# VŨ KHÍ CHỐNG F5 BAY MÀU
-st.sidebar.subheader("💾 Sao lưu (Chống F5)")
-backup_data = {
-    "n_vars": n_vars,
-    "n_cons": n_cons,
-    "opt_type": opt_type,
-    "obj": st.session_state.init_obj.values.tolist(),
-    "cons": st.session_state.init_cons.values.tolist()
-}
-st.sidebar.download_button(label="📥 Tải file Lưu Tiến Trình", data=json.dumps(backup_data), file_name="backup_qhtt.json", mime="application/json")
-
-restore_file = st.sidebar.file_uploader("📤 Phục hồi dữ liệu", type=["json"])
-if restore_file is not None:
-    try:
-        restored = json.load(restore_file)
-        st.session_state.vars_input = restored["n_vars"]
-        st.session_state.cons_input = restored["n_cons"]
-        st.session_state.opt_input = restored["opt_type"]
-        
-        obj_cols_res = [f"x{i+1}" for i in range(restored["n_vars"])]
-        st.session_state.init_obj = pd.DataFrame(restored["obj"], columns=obj_cols_res)
-        st.session_state.init_cons = pd.DataFrame(restored["cons"], columns=obj_cols_res + ["Dấu", "RHS"])
-        st.sidebar.success("✅ Phục hồi thành công!")
-        time.sleep(1)
+# Nút lưu phiên làm việc hiện tại
+col_save1, col_save2 = st.sidebar.columns([3, 1])
+with col_save1:
+    save_name = st.text_input("Tên bài toán:", placeholder="Vd: Bài thi cuối kỳ...", label_visibility="collapsed")
+with col_save2:
+    if st.button("💾 Lưu"):
+        name_to_save = save_name if save_name else f"Bài toán {datetime.now().strftime('%H:%M %d/%m')}"
+        st.session_state.history[name_to_save] = {
+            "n_vars": st.session_state.vars_input,
+            "n_cons": st.session_state.cons_input,
+            "opt_type": st.session_state.opt_input,
+            "obj": st.session_state.init_obj.values.tolist(),
+            "cons": st.session_state.init_cons.values.tolist()
+        }
+        save_history(st.session_state.history)
+        st.sidebar.success("Đã lưu!")
+        time.sleep(0.5)
         st.rerun()
-    except Exception:
-        st.sidebar.error("❌ File không hợp lệ.")
 
 st.sidebar.markdown("---")
 
-st.sidebar.subheader("📂 Quản lý dữ liệu mẫu")
-if st.sidebar.button("📝 Tải mẫu 1 Pha (RHS >= 0)"):
-    st.session_state.vars_input, st.session_state.cons_input, st.session_state.opt_input = 2, 3, "MAX"
-    st.session_state.init_obj = pd.DataFrame([[2.0, 5.0]], columns=["x1", "x2"])
-    st.session_state.init_cons = pd.DataFrame([[1.0, 0.0, "<=", 4.0], [0.0, 2.0, "<=", 12.0], [3.0, 2.0, "<=", 18.0]], columns=["x1", "x2", "Dấu", "RHS"])
-    st.rerun()
+# HIỂN THỊ DANH SÁCH LỊCH SỬ NHƯ CHATGPT
+if not st.session_state.history:
+    st.sidebar.info("Chưa có bài toán nào được lưu.")
+else:
+    for history_name, history_data in reversed(st.session_state.history.items()):
+        if st.sidebar.button(f"💬 {history_name}", use_container_width=True):
+            st.session_state.vars_input = history_data["n_vars"]
+            st.session_state.cons_input = history_data["n_cons"]
+            st.session_state.opt_input = history_data["opt_type"]
+            obj_cols_res = [f"x{i+1}" for i in range(history_data["n_vars"])]
+            st.session_state.init_obj = pd.DataFrame(history_data["obj"], columns=obj_cols_res)
+            st.session_state.init_cons = pd.DataFrame(history_data["cons"], columns=obj_cols_res + ["Dấu", "RHS"])
+            st.rerun()
+            
+    if st.sidebar.button("🗑️ Xóa toàn bộ lịch sử", type="secondary"):
+        st.session_state.history = {}
+        save_history({})
+        st.rerun()
 
-if st.sidebar.button("📚 Tải mẫu 2 Pha (RHS < 0)"):
-    st.session_state.vars_input, st.session_state.cons_input, st.session_state.opt_input = 2, 3, "MIN"
-    st.session_state.init_obj = pd.DataFrame([[1.0, 2.0]], columns=["x1", "x2"])
-    st.session_state.init_cons = pd.DataFrame([[-1.0, 1.0, "<=", -2.0], [-1.0, -2.0, "<=", -4.0], [0.0, 1.0, "<=", 2.0]], columns=["x1", "x2", "Dấu", "RHS"])
-    st.rerun()
+st.sidebar.markdown("---")
+
+# CÀI ĐẶT THÔNG SỐ CƠ BẢN
+st.sidebar.header("Cài đặt chung")
+method = st.sidebar.radio("CHỌN PHƯƠNG PHÁP GIẢI:", ("1. Scipy (Tổng quát, nhanh)", "2. Đồ thị (Chỉ 2 biến)", "3. Từ vựng (Đơn hình Dantzig)", "4. Từ vựng (Đơn hình Bland)", "5. Chạy tất cả (So sánh)"))
+st.sidebar.number_input("Số lượng biến", 1, 20, key="vars_input")
+st.sidebar.number_input("Số lượng ràng buộc", 1, 20, key="cons_input")
+st.sidebar.radio("Mục tiêu tối ưu", ("MAX", "MIN"), key="opt_input")
 
 if st.sidebar.button("🔄 Đặt lại bảng trống"):
     st.session_state.vars_input, st.session_state.cons_input, st.session_state.opt_input = 2, 3, "MAX"
     st.session_state.init_obj = pd.DataFrame([[0.0, 0.0]], columns=["x1", "x2"])
     st.session_state.init_cons = pd.DataFrame([[0.0, 0.0, "<=", 0.0] for _ in range(3)], columns=["x1", "x2", "Dấu", "RHS"])
     st.rerun()
-st.sidebar.markdown("---")
-
-st.sidebar.number_input("Số lượng biến", 1, 20, key="vars_input")
-st.sidebar.number_input("Số lượng ràng buộc", 1, 20, key="cons_input")
-st.sidebar.radio("Mục tiêu tối ưu", ("MAX", "MIN"), key="opt_input")
 
 # =========================================================================
 # GIAO DIỆN NHẬP LIỆU CHÍNH
@@ -278,9 +266,8 @@ with tab_model_dual:
     st.info("💡 Phân tích: Thuật toán tự động sinh bài toán đối ngẫu (Dual) bằng cách chuyển vị ma trận hệ số, đảo MIN/MAX và áp dụng quy tắc đổi dấu.")
     st.markdown(render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds))
 
-
 # =========================================================================
-# CÁC HÀM XỬ LÝ (CORE LOGIC ĐÃ FIX FULL BUGS)
+# CÁC HÀM XỬ LÝ
 # =========================================================================
 
 def log_and_print(log, text):
@@ -334,7 +321,7 @@ def solve_graph(c, df_cons, n_vars, opt_type):
         st.error("❌ Phương pháp đồ thị chỉ hỗ trợ bài toán có đúng 2 biến (x1, x2).")
         return
     
-    # TÌM NGHIỆM TỐI ƯU TRƯỚC ĐỂ VẼ ĐƯỜNG Z CHUẨN XÁC
+    # TÌM NGHIỆM TỐI ƯU TRƯỚC
     c_scipy = -c if opt_type == "MAX" else c
     A_ub, b_ub, A_eq, b_eq = [], [], [], []
     for _, row in df_cons.iterrows():
@@ -347,8 +334,7 @@ def solve_graph(c, df_cons, n_vars, opt_type):
         else: A_eq.append([a1, a2]); b_eq.append(rhs)
 
     res = linprog(c_scipy, A_ub=A_ub if len(A_ub)>0 else None, b_ub=b_ub if len(b_ub)>0 else None,
-                  A_eq=A_eq if len(A_eq)>0 else None, b_eq=b_eq if len(b_eq)>0 else None,
-                  bounds=bounds, method='highs')
+                  A_eq=A_eq if len(A_eq)>0 else None, b_eq=b_eq if len(b_eq)>0 else None, bounds=bounds, method='highs')
     
     is_optimal = res.success
     opt_x1, opt_x2, opt_z = None, None, None
@@ -358,8 +344,7 @@ def solve_graph(c, df_cons, n_vars, opt_type):
 
     st.write("### 🎚️ Đồ thị Miền nghiệm & Trượt hàm mục tiêu")
     col1, col2 = st.columns([3, 1])
-    with col1:
-        z_slider = st.slider("Trượt Z để xem hướng tối ưu", min_value=-50.0, max_value=50.0, value=0.0, step=0.5)
+    with col1: z_slider = st.slider("Trượt Z để xem hướng tối ưu", min_value=-50.0, max_value=50.0, value=0.0, step=0.5)
     with col2:
         st.write(""); st.write("")
         is_auto = st.button("🎬 Bật Tự Động Trượt", type="secondary")
@@ -372,7 +357,6 @@ def solve_graph(c, df_cons, n_vars, opt_type):
         d = np.linspace(-5, 25, 600)
         x1, x2 = np.meshgrid(d, d)
         
-        # Tạo Mask Miền Nghiệm Ban Đầu (Dựa theo ràng buộc biến >= 0 hoặc <= 0)
         mask = np.ones_like(x1, dtype=bool)
         if bounds[0] == (0, None): mask &= (x1 >= 0)
         elif bounds[0] == (None, 0): mask &= (x1 <= 0)
@@ -381,7 +365,6 @@ def solve_graph(c, df_cons, n_vars, opt_type):
 
         ax.axhline(0, color='black', linewidth=1.5)
         ax.axvline(0, color='black', linewidth=1.5)
-        
         colors = ['#1f77b4', '#ff7f0e', '#8c564b', '#9467bd', '#e377c2', '#7f7f7f']
         
         for idx, row in df_cons.iterrows():
@@ -393,53 +376,36 @@ def solve_graph(c, df_cons, n_vars, opt_type):
             
             if a1 == 0 and a2 == 0: continue
             
-            # Chỉ vẽ đường thẳng, KHÔNG ghi chú rối rắm
             if a2 != 0:
                 y = (rhs - a1 * d) / a2
                 ax.plot(d, y, color=color, linewidth=2, label=f"(PT{idx+1}): {a1}x1 + {a2}x2 {sign} {rhs}")
-            else:
-                ax.axvline(x=rhs/a1, color=color, linewidth=2, label=f"(PT{idx+1}): {a1}x1 {sign} {rhs}")
+            else: ax.axvline(x=rhs/a1, color=color, linewidth=2, label=f"(PT{idx+1}): {a1}x1 {sign} {rhs}")
 
-            # Ép mask giới hạn miền nghiệm
             if sign == "<=": mask &= (a1 * x1 + a2 * x2 <= rhs)
             elif sign == ">=": mask &= (a1 * x1 + a2 * x2 >= rhs)
             else: mask &= (np.isclose(a1 * x1 + a2 * x2, rhs, atol=0.05))
                 
-        # TÔ MÀU MIỀN NGHIỆM XANH LÁ RÕ RÀNG
         ax.contourf(x1, x2, mask.astype(int), levels=[0.5, 1.5], colors=['#90EE90'], alpha=0.6)
         
-        # Vẽ Đường Z trượt (nét đứt)
         if c1 != 0 or c2 != 0:
             if c2 != 0:
                 y_obj = (current_z - c1 * d) / c2
                 ax.plot(d, y_obj, 'r--', linewidth=1.5, alpha=0.5, label=f"Đường trượt Z = {current_z:.1f}")
-            else:
-                ax.axvline(x=current_z/c1, color='r', linestyle='--', linewidth=1.5, alpha=0.5, label=f"Đường trượt Z = {current_z:.1f}")
+            else: ax.axvline(x=current_z/c1, color='r', linestyle='--', linewidth=1.5, alpha=0.5, label=f"Đường trượt Z = {current_z:.1f}")
 
-        # VẼ CHÍNH XÁC ĐIỂM TỐI ƯU VÀ ĐƯỜNG Z TỐI ƯU
         if is_optimal:
-            # Ngôi sao vàng chỉ điểm Tối ưu
             ax.plot(opt_x1, opt_x2, marker='*', markersize=18, color='gold', markeredgecolor='red')
-            
-            # Hộp Text sang chảnh báo Tọa độ
-            ax.annotate(f'TỐI ƯU\nZ = {opt_z:.2f}\n({opt_x1:.2f}, {opt_x2:.2f})', 
-                        xy=(opt_x1, opt_x2), xytext=(opt_x1 + 1, opt_x2 + 1),
-                        arrowprops=dict(facecolor='red', shrink=0.05, width=2, headwidth=8),
-                        fontsize=11, fontweight='bold', color='red', 
+            ax.annotate(f'TỐI ƯU\nZ = {opt_z:.2f}\n({opt_x1:.2f}, {opt_x2:.2f})', xy=(opt_x1, opt_x2), xytext=(opt_x1 + 1, opt_x2 + 1),
+                        arrowprops=dict(facecolor='red', shrink=0.05, width=2, headwidth=8), fontsize=11, fontweight='bold', color='red', 
                         bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="red", lw=2, alpha=0.9))
-
-            # Đường Z tối ưu nét liền cực đậm
             if c2 != 0:
                 y_opt = (opt_z - c1 * d) / c2
                 ax.plot(d, y_opt, 'r-', linewidth=3, label=f"ĐƯỜNG TỐI ƯU Z = {opt_z:.2f}")
-            else:
-                ax.axvline(x=opt_z/c1, color='r', linewidth=3, label=f"ĐƯỜNG TỐI ƯU Z = {opt_z:.2f}")
+            else: ax.axvline(x=opt_z/c1, color='r', linewidth=3, label=f"ĐƯỜNG TỐI ƯU Z = {opt_z:.2f}")
 
-        # Tự động co giãn khung hình vừa đủ nhìn
         max_limit = max(10, opt_x1 + 5 if is_optimal else 10, opt_x2 + 5 if is_optimal else 10)
         ax.set_xlim(-2, max_limit)
         ax.set_ylim(-2, max_limit)
-        
         ax.grid(True, linestyle='--', alpha=0.6)
         ax.set_xlabel("x1", fontweight='bold')
         ax.set_ylabel("x2", fontweight='bold')
@@ -449,9 +415,7 @@ def solve_graph(c, df_cons, n_vars, opt_type):
     if is_auto:
         for val in np.arange(-15.0, 20.0 + 1, 1.0):
             fig = render_frame(val); plot_container.pyplot(fig); plt.close(fig); time.sleep(0.15) 
-    else:
-        fig = render_frame(z_slider); plot_container.pyplot(fig)
-
+    else: fig = render_frame(z_slider); plot_container.pyplot(fig)
 
 def format_dictionary(N, B, A_N, b_B, c_N, v, var_names, enter_j=-1, leave_i=-1, obj_name="Z"):
     z_eq = f"{obj_name} = {v:.2f}"
@@ -475,7 +439,6 @@ def format_dictionary(N, B, A_N, b_B, c_N, v, var_names, enter_j=-1, leave_i=-1,
                 eq += f" {sign} {abs(coef):.2f}{var_str}"
         if i == leave_i: eq += r" \quad \color{red}{\leftarrow \text{ (Ra)}}"
         lines.append(eq)
-        
     dict_str = z_eq + r" \\ \hline " + "\n" + r" \\ ".join(lines)
     return f"$$\n\\begin{{array}}{{l}}\n{dict_str}\n\\end{{array}}\n$$"
 
@@ -558,18 +521,9 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
         coeffs = row[obj_cols].fillna(0).values.astype(float)
         rhs = float(row["RHS"]) if not pd.isna(row["RHS"]) else 0.0
         sign = row["Dấu"]
-        
-        if sign == "<=":
-            A.append(coeffs)
-            b.append(rhs)
-        elif sign == ">=":
-            A.append(-coeffs)
-            b.append(-rhs)
-        elif sign == "=":
-            A.append(coeffs)
-            b.append(rhs)
-            A.append(-coeffs)
-            b.append(-rhs)
+        if sign == "<=": A.append(coeffs); b.append(rhs)
+        elif sign == ">=": A.append(-coeffs); b.append(-rhs)
+        elif sign == "=": A.append(coeffs); b.append(rhs); A.append(-coeffs); b.append(-rhs)
             
     n, m = len(c), len(b)
     c_orig = -np.array(c, dtype=float) if opt_type == "MIN" else np.array(c, dtype=float)
@@ -584,7 +538,6 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
         c_N, v = np.zeros(n + 1), 0.0
         c_N[-1] = -1.0 
         leave_i, enter_j = np.argmin(b_B), n 
-        
         log_and_print(log, "**Bước khởi tạo Từ vựng Pha 1:**")
         log_and_print(log, format_dictionary(N, B, A_N, b_B, c_N, v, var_names, enter_j, leave_i, obj_name="\\xi"))
         N, B, A_N, b_B, c_N, v = perform_pivot(N, B, A_N, b_B, c_N, v, enter_j, leave_i)
@@ -626,19 +579,12 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
         
         opt_x = np.zeros(n)
         for k in range(n):
-            if k in B:
-                opt_x[k] = b_B[B.index(k)]
+            if k in B: opt_x[k] = b_B[B.index(k)]
         
         st.write("🎯 **Bảng Giá trị Nghiệm (Nghiệm Tối Ưu):**")
         st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Giá trị": np.round(opt_x, 4)}))
 
-    report_content = "\n\n".join(log) 
-    st.download_button(
-        label=f"📥 Tải Báo Cáo Giải Chi Tiết ({rule.title()})",
-        data=report_content,
-        file_name=f"BaoCao_QHTT_{rule}.md",
-        mime="text/markdown"
-    )
+    st.download_button(label=f"📥 Tải Báo Cáo Giải Chi Tiết ({rule.title()})", data="\n\n".join(log), file_name=f"BaoCao_QHTT_{rule}.md", mime="text/markdown")
 
 # ----------------- NÚT THỰC THI CHÍNH -----------------
 st.markdown("---")
@@ -648,14 +594,10 @@ if st.button("🚀 BẤM VÀO ĐÂY ĐỂ GIẢI BÀI TOÁN", type="primary", us
 
 if st.session_state.is_solved:
     c = df_obj.iloc[0].fillna(0).values.astype(float)
-    if method == "1. Scipy (Tổng quát, nhanh)": 
-        solve_scipy(c, df_cons, obj_cols, opt_type, bounds)
-    elif method == "2. Đồ thị (Chỉ 2 biến)": 
-        solve_graph(c, df_cons, n_vars, opt_type)
-    elif method == "3. Từ vựng (Đơn hình Dantzig)": 
-        solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig')
-    elif method == "4. Từ vựng (Đơn hình Bland)": 
-        solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='bland')
+    if method == "1. Scipy (Tổng quát, nhanh)": solve_scipy(c, df_cons, obj_cols, opt_type, bounds)
+    elif method == "2. Đồ thị (Chỉ 2 biến)": solve_graph(c, df_cons, n_vars, opt_type)
+    elif method == "3. Từ vựng (Đơn hình Dantzig)": solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig')
+    elif method == "4. Từ vựng (Đơn hình Bland)": solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='bland')
     elif method == "5. Chạy tất cả (So sánh)":
         tab1, tab2, tab3, tab4 = st.tabs(["📦 Thư viện Scipy", "📈 Phương pháp Đồ thị", "📝 Từ vựng (Dantzig)", "📝 Từ vựng (Bland)"])
         with tab1: solve_scipy(c, df_cons, obj_cols, opt_type, bounds)
