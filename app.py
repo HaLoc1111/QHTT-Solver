@@ -29,7 +29,6 @@ n_vars = st.session_state.vars_input
 n_cons = st.session_state.cons_input
 opt_type = st.session_state.opt_input
 
-# Tự động nới rộng/thu hẹp bảng khi số biến (n_vars) thay đổi
 obj_cols = [f"x{i+1}" for i in range(n_vars)]
 if st.session_state.init_obj.shape[1] != n_vars:
     st.session_state.init_obj = pd.DataFrame([[0.0] * n_vars], columns=obj_cols)
@@ -118,7 +117,7 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
 st.markdown("---")
 
 # =========================================================================
-# GIAO DIỆN SIDEBAR
+# GIAO DIỆN SIDEBAR (HIỆN ĐẠI HÓA, TỰ ĐỘNG ĐỒNG BỘ)
 # =========================================================================
 st.sidebar.header("Cài đặt chung")
 method = st.sidebar.radio(
@@ -279,8 +278,9 @@ with tab_model_dual:
     st.info("💡 Phân tích: Thuật toán tự động sinh bài toán đối ngẫu (Dual) bằng cách chuyển vị ma trận hệ số, đảo MIN/MAX và áp dụng quy tắc đổi dấu.")
     st.markdown(render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds))
 
+
 # =========================================================================
-# CÁC HÀM XỬ LÝ 
+# CÁC HÀM XỬ LÝ (CORE LOGIC ĐÃ FIX FULL BUGS)
 # =========================================================================
 
 def log_and_print(log, text):
@@ -333,11 +333,33 @@ def solve_graph(c, df_cons, n_vars, opt_type):
     if n_vars != 2:
         st.error("❌ Phương pháp đồ thị chỉ hỗ trợ bài toán có đúng 2 biến (x1, x2).")
         return
-        
-    st.write("### 🎚️ Mô phỏng Trượt hàm mục tiêu")
+    
+    # TÌM NGHIỆM TỐI ƯU TRƯỚC ĐỂ VẼ ĐƯỜNG Z CHUẨN XÁC
+    c_scipy = -c if opt_type == "MAX" else c
+    A_ub, b_ub, A_eq, b_eq = [], [], [], []
+    for _, row in df_cons.iterrows():
+        a1 = float(row["x1"]) if not pd.isna(row["x1"]) else 0.0
+        a2 = float(row["x2"]) if not pd.isna(row["x2"]) else 0.0
+        rhs = float(row["RHS"]) if not pd.isna(row["RHS"]) else 0.0
+        sign = row["Dấu"]
+        if sign == "<=": A_ub.append([a1, a2]); b_ub.append(rhs)
+        elif sign == ">=": A_ub.append([-a1, -a2]); b_ub.append(-rhs)
+        else: A_eq.append([a1, a2]); b_eq.append(rhs)
+
+    res = linprog(c_scipy, A_ub=A_ub if len(A_ub)>0 else None, b_ub=b_ub if len(b_ub)>0 else None,
+                  A_eq=A_eq if len(A_eq)>0 else None, b_eq=b_eq if len(b_eq)>0 else None,
+                  bounds=bounds, method='highs')
+    
+    is_optimal = res.success
+    opt_x1, opt_x2, opt_z = None, None, None
+    if is_optimal:
+        opt_x1, opt_x2 = res.x[0], res.x[1]
+        opt_z = res.fun if opt_type == "MIN" else -res.fun
+
+    st.write("### 🎚️ Đồ thị Miền nghiệm & Trượt hàm mục tiêu")
     col1, col2 = st.columns([3, 1])
     with col1:
-        z_slider = st.slider("Giá trị Z hiện tại", min_value=-30.0, max_value=30.0, value=0.0, step=0.5)
+        z_slider = st.slider("Trượt Z để xem hướng tối ưu", min_value=-50.0, max_value=50.0, value=0.0, step=0.5)
     with col2:
         st.write(""); st.write("")
         is_auto = st.button("🎬 Bật Tự Động Trượt", type="secondary")
@@ -346,17 +368,22 @@ def solve_graph(c, df_cons, n_vars, opt_type):
     c1, c2 = float(c[0]), float(c[1])
 
     def render_frame(current_z):
-        fig, ax = plt.subplots(figsize=(8, 8))
-        d = np.linspace(-5, 20, 400)
+        fig, ax = plt.subplots(figsize=(10, 8))
+        d = np.linspace(-5, 25, 600)
         x1, x2 = np.meshgrid(d, d)
-        mask = (x1 >= 0) & (x2 >= 0) 
         
+        # Tạo Mask Miền Nghiệm Ban Đầu (Dựa theo ràng buộc biến >= 0 hoặc <= 0)
+        mask = np.ones_like(x1, dtype=bool)
+        if bounds[0] == (0, None): mask &= (x1 >= 0)
+        elif bounds[0] == (None, 0): mask &= (x1 <= 0)
+        if bounds[1] == (0, None): mask &= (x2 >= 0)
+        elif bounds[1] == (None, 0): mask &= (x2 <= 0)
+
         ax.axhline(0, color='black', linewidth=1.5)
         ax.axvline(0, color='black', linewidth=1.5)
-        ax.plot(0, 0, 'ko')
-        ax.text(0.2, -0.5, 'O(0,0)', fontsize=12, fontweight='bold')
         
-        colors = ['blue', 'green', 'purple', 'orange']
+        colors = ['#1f77b4', '#ff7f0e', '#8c564b', '#9467bd', '#e377c2', '#7f7f7f']
+        
         for idx, row in df_cons.iterrows():
             a1 = float(row["x1"]) if not pd.isna(row["x1"]) else 0.0
             a2 = float(row["x2"]) if not pd.isna(row["x2"]) else 0.0
@@ -364,60 +391,55 @@ def solve_graph(c, df_cons, n_vars, opt_type):
             sign = row["Dấu"]
             color = colors[idx % len(colors)]
             
-            if a1 == 0 and a2 == 0: continue # FIX CỨNG: Chống lỗi chia cho 0 
+            if a1 == 0 and a2 == 0: continue
             
+            # Chỉ vẽ đường thẳng, KHÔNG ghi chú rối rắm
             if a2 != 0:
                 y = (rhs - a1 * d) / a2
-                ax.plot(d, y, color=color, label=f"(PT{idx+1}): {a1}x1 + {a2}x2 {sign} {rhs}")
-                if rhs/a2 >= 0:
-                    ax.plot(0, rhs/a2, marker='o', color=color)
-                    ax.text(0.2, rhs/a2 + 0.2, f'(0, {rhs/a2:.1f})')
-                if a1 != 0 and rhs/a1 >= 0:
-                    ax.plot(rhs/a1, 0, marker='o', color=color)
-                    ax.text(rhs/a1 + 0.2, 0.2, f'({rhs/a1:.1f}, 0)')
-                    
-                norm_a = np.sqrt(a1**2 + a2**2)
-                if norm_a != 0:
-                    dir_x = -a1 / norm_a if sign == "<=" else a1 / norm_a
-                    dir_y = -a2 / norm_a if sign == "<=" else a2 / norm_a
-                    px = (rhs/a1)/2 if a1 != 0 else 2.0
-                    py = (rhs - a1 * px) / a2
-                    ax.annotate('', xy=(px + dir_x*1.5, py + dir_y*1.5), xytext=(px, py), arrowprops=dict(arrowstyle="->", color=color, lw=2))
+                ax.plot(d, y, color=color, linewidth=2, label=f"(PT{idx+1}): {a1}x1 + {a2}x2 {sign} {rhs}")
             else:
-                ax.axvline(x=rhs/a1, color=color, label=f"(PT{idx+1}): {a1}x1 {sign} {rhs}")
-                dir_x = -1 if sign == "<=" else 1
-                ax.annotate('', xy=(rhs/a1 + dir_x*1.5, 5), xytext=(rhs/a1, 5), arrowprops=dict(arrowstyle="->", color=color, lw=2))
+                ax.axvline(x=rhs/a1, color=color, linewidth=2, label=f"(PT{idx+1}): {a1}x1 {sign} {rhs}")
 
-            if sign == "<=": mask = mask & (a1 * x1 + a2 * x2 <= rhs)
-            elif sign == ">=": mask = mask & (a1 * x1 + a2 * x2 >= rhs)
+            # Ép mask giới hạn miền nghiệm
+            if sign == "<=": mask &= (a1 * x1 + a2 * x2 <= rhs)
+            elif sign == ">=": mask &= (a1 * x1 + a2 * x2 >= rhs)
+            else: mask &= (np.isclose(a1 * x1 + a2 * x2, rhs, atol=0.05))
                 
-        ax.imshow(mask.astype(int), extent=(-5, 20, -5, 20), origin="lower", cmap="Greys", alpha=0.3)
+        # TÔ MÀU MIỀN NGHIỆM XANH LÁ RÕ RÀNG
+        ax.contourf(x1, x2, mask.astype(int), levels=[0.5, 1.5], colors=['#90EE90'], alpha=0.6)
         
-        if c1 == 0 and c2 == 0:
-            pass # FIX CỨNG: Chống hàm mục tiêu trống
-        elif c2 != 0:
-            y_obj = (current_z - c1 * d) / c2
-            ax.plot(d, y_obj, 'r-', linewidth=2.5, label=f"Đường Z = {current_z:.1f}")
-            y_inf_plus = (40.0 - c1 * d) / c2
-            ax.plot(d, y_inf_plus, 'r--', alpha=0.4)
-            y_inf_minus = (-40.0 - c1 * d) / c2
-            ax.plot(d, y_inf_minus, 'b--', alpha=0.4)
-            
-            mid_x = 4.0
-            mid_y = (current_z - c1 * mid_x) / c2
-            norm_c = np.sqrt(c1**2 + c2**2)
-            if norm_c != 0:
-                u = (c1 / norm_c) * 2.0
-                v = (c2 / norm_c) * 2.0
-                ax.annotate('+∞ (Tăng)', xy=(mid_x + u, mid_y + v), xytext=(mid_x, mid_y), arrowprops=dict(facecolor='red', width=1.5, headwidth=8, shrink=0.05), color='red', fontsize=11, fontweight='bold')
-                ax.annotate('-∞ (Giảm)', xy=(mid_x - u, mid_y - v), xytext=(mid_x, mid_y), arrowprops=dict(facecolor='blue', width=1.5, headwidth=8, shrink=0.05), color='blue', fontsize=11, fontweight='bold')
-        else:
-            ax.axvline(x=current_z/c1, color='r', linewidth=2.5, label=f"Đường Z = {current_z:.1f}")
-            ax.annotate('+∞ (Tăng)', xy=(current_z/c1 + 2.0, 4.0), xytext=(current_z/c1, 4.0), arrowprops=dict(facecolor='red', width=1.5, headwidth=8, shrink=0.05), color='red', fontsize=11, fontweight='bold')
-            ax.annotate('-∞ (Giảm)', xy=(current_z/c1 - 2.0, 4.0), xytext=(current_z/c1, 4.0), arrowprops=dict(facecolor='blue', width=1.5, headwidth=8, shrink=0.05), color='blue', fontsize=11, fontweight='bold')
+        # Vẽ Đường Z trượt (nét đứt)
+        if c1 != 0 or c2 != 0:
+            if c2 != 0:
+                y_obj = (current_z - c1 * d) / c2
+                ax.plot(d, y_obj, 'r--', linewidth=1.5, alpha=0.5, label=f"Đường trượt Z = {current_z:.1f}")
+            else:
+                ax.axvline(x=current_z/c1, color='r', linestyle='--', linewidth=1.5, alpha=0.5, label=f"Đường trượt Z = {current_z:.1f}")
 
-        ax.set_xlim(-2, 10)
-        ax.set_ylim(-2, 10)
+        # VẼ CHÍNH XÁC ĐIỂM TỐI ƯU VÀ ĐƯỜNG Z TỐI ƯU
+        if is_optimal:
+            # Ngôi sao vàng chỉ điểm Tối ưu
+            ax.plot(opt_x1, opt_x2, marker='*', markersize=18, color='gold', markeredgecolor='red')
+            
+            # Hộp Text sang chảnh báo Tọa độ
+            ax.annotate(f'TỐI ƯU\nZ = {opt_z:.2f}\n({opt_x1:.2f}, {opt_x2:.2f})', 
+                        xy=(opt_x1, opt_x2), xytext=(opt_x1 + 1, opt_x2 + 1),
+                        arrowprops=dict(facecolor='red', shrink=0.05, width=2, headwidth=8),
+                        fontsize=11, fontweight='bold', color='red', 
+                        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="red", lw=2, alpha=0.9))
+
+            # Đường Z tối ưu nét liền cực đậm
+            if c2 != 0:
+                y_opt = (opt_z - c1 * d) / c2
+                ax.plot(d, y_opt, 'r-', linewidth=3, label=f"ĐƯỜNG TỐI ƯU Z = {opt_z:.2f}")
+            else:
+                ax.axvline(x=opt_z/c1, color='r', linewidth=3, label=f"ĐƯỜNG TỐI ƯU Z = {opt_z:.2f}")
+
+        # Tự động co giãn khung hình vừa đủ nhìn
+        max_limit = max(10, opt_x1 + 5 if is_optimal else 10, opt_x2 + 5 if is_optimal else 10)
+        ax.set_xlim(-2, max_limit)
+        ax.set_ylim(-2, max_limit)
+        
         ax.grid(True, linestyle='--', alpha=0.6)
         ax.set_xlabel("x1", fontweight='bold')
         ax.set_ylabel("x2", fontweight='bold')
@@ -426,13 +448,10 @@ def solve_graph(c, df_cons, n_vars, opt_type):
 
     if is_auto:
         for val in np.arange(-15.0, 20.0 + 1, 1.0):
-            fig = render_frame(val)
-            plot_container.pyplot(fig)
-            plt.close(fig) 
-            time.sleep(0.15) 
+            fig = render_frame(val); plot_container.pyplot(fig); plt.close(fig); time.sleep(0.15) 
     else:
-        fig = render_frame(z_slider)
-        plot_container.pyplot(fig)
+        fig = render_frame(z_slider); plot_container.pyplot(fig)
+
 
 def format_dictionary(N, B, A_N, b_B, c_N, v, var_names, enter_j=-1, leave_i=-1, obj_name="Z"):
     z_eq = f"{obj_name} = {v:.2f}"
