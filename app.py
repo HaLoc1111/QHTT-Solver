@@ -88,7 +88,9 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                     except Exception: continue 
                 
                 if response:
-                    raw_text = response.text.strip().replace("```json", "").replace("```", "").strip()
+                    raw_text = response.text.strip()
+                    backticks = "`" * 3
+                    raw_text = raw_text.replace(backticks + "json", "").replace(backticks, "").strip()
                     data = json.loads(raw_text)
                     
                     st.session_state.opt_input = data.get("opt_type", "MAX").upper()
@@ -158,15 +160,33 @@ st.sidebar.markdown("---")
 # CÀI ĐẶT THÔNG SỐ CƠ BẢN
 st.sidebar.header("Cài đặt chung")
 method = st.sidebar.radio("CHỌN PHƯƠNG PHÁP GIẢI:", ("1. Scipy (Tổng quát, nhanh)", "2. Đồ thị (Chỉ 2 biến)", "3. Từ vựng (Đơn hình Dantzig)", "4. Từ vựng (Đơn hình Bland)", "5. Chạy tất cả (So sánh)"))
-st.sidebar.number_input("Số lượng biến", 1, 20, key="vars_input")
-st.sidebar.number_input("Số lượng ràng buộc", 1, 20, key="cons_input")
-st.sidebar.radio("Mục tiêu tối ưu", ("MAX", "MIN"), key="opt_input")
+st.sidebar.markdown("---")
+
+# ĐÃ PHỤC HỒI MỤC TẢI DỮ LIỆU MẪU CỦA BẠN
+st.sidebar.subheader("📂 Quản lý dữ liệu mẫu")
+if st.sidebar.button("📝 Tải mẫu 1 Pha (RHS >= 0)"):
+    st.session_state.vars_input, st.session_state.cons_input, st.session_state.opt_input = 2, 3, "MAX"
+    st.session_state.init_obj = pd.DataFrame([[2.0, 5.0]], columns=["x1", "x2"])
+    st.session_state.init_cons = pd.DataFrame([[1.0, 0.0, "<=", 4.0], [0.0, 2.0, "<=", 12.0], [3.0, 2.0, "<=", 18.0]], columns=["x1", "x2", "Dấu", "RHS"])
+    st.rerun()
+
+if st.sidebar.button("📚 Tải mẫu 2 Pha (Trong vở ghi)"):
+    st.session_state.vars_input, st.session_state.cons_input, st.session_state.opt_input = 2, 3, "MIN"
+    st.session_state.init_obj = pd.DataFrame([[1.0, 2.0]], columns=["x1", "x2"])
+    st.session_state.init_cons = pd.DataFrame([[-1.0, 1.0, "<=", -2.0], [-1.0, -2.0, "<=", -4.0], [0.0, 1.0, "<=", 2.0]], columns=["x1", "x2", "Dấu", "RHS"])
+    st.rerun()
 
 if st.sidebar.button("🔄 Đặt lại bảng trống"):
     st.session_state.vars_input, st.session_state.cons_input, st.session_state.opt_input = 2, 3, "MAX"
     st.session_state.init_obj = pd.DataFrame([[0.0, 0.0]], columns=["x1", "x2"])
     st.session_state.init_cons = pd.DataFrame([[0.0, 0.0, "<=", 0.0] for _ in range(3)], columns=["x1", "x2", "Dấu", "RHS"])
     st.rerun()
+
+st.sidebar.markdown("---")
+
+st.sidebar.number_input("Số lượng biến", 1, 20, key="vars_input")
+st.sidebar.number_input("Số lượng ràng buộc", 1, 20, key="cons_input")
+st.sidebar.radio("Mục tiêu tối ưu", ("MAX", "MIN"), key="opt_input")
 
 # =========================================================================
 # GIAO DIỆN NHẬP LIỆU CHÍNH
