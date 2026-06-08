@@ -7,7 +7,6 @@ import time
 import json
 import os
 from datetime import datetime
-import io
 
 # =========================================================================
 # CẤU HÌNH TRANG CHỦ & HỆ THỐNG LƯU TRỮ LỊCH SỬ
@@ -55,10 +54,10 @@ if st.session_state.init_cons.shape[0] != n_cons or st.session_state.init_cons.s
     st.session_state.init_cons = pd.DataFrame([[0.0] * n_vars + ["<=", 0.0] for _ in range(n_cons)], columns=obj_cols + ["Dấu", "RHS"])
 
 # =========================================================================
-# 1. QUÉT ẢNH / VĂN BẢN BẰNG AI (TÍNH NĂNG MỚI: NHẬP CHỮ)
+# 1. QUÉT ẢNH BẰNG AI 
 # =========================================================================
-st.markdown("### 🤖 Tự động nhập đề bằng AI (Ảnh / Đề bài chữ)")
-st.info("💡 Bạn có thể tải ảnh chụp bài toán hoặc copy đoạn văn bản đề bài vào đây. AI sẽ tự động phân tích và tạo ma trận!")
+st.markdown("### 📸 1. Tự động nhập đề bằng AI (Upload Ảnh)")
+st.info("💡 Tải ảnh bài toán (công thức toán học) lên đây. AI sẽ phân tích và tự động điền vào bảng bên dưới!")
 
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
@@ -66,40 +65,33 @@ except KeyError:
     api_key = None
     st.error("⚠️ App chưa được khai báo API Key trong mục Settings > Secrets của Streamlit Cloud!")
 
-ai_mode = st.radio("Chọn nguồn dữ liệu đầu vào:", ["📷 Quét từ Ảnh chụp", "✍️ Phân tích từ Đề bài Văn bản"], horizontal=True)
+uploaded_file = st.file_uploader("Kéo thả hoặc chọn ảnh bài toán...", type=["jpg", "png", "jpeg"])
 
-ai_input_data = None
-if ai_mode == "📷 Quét từ Ảnh chụp":
-    ai_input_data = st.file_uploader("Kéo thả hoặc chọn ảnh...", type=["jpg", "png", "jpeg"])
-else:
-    ai_input_data = st.text_area("Nhập đề bài chữ vào đây (Vd: Một công ty cần sản xuất 2 loại sản phẩm A và B...)", height=150)
-
-if st.button("🧠 Phân tích & Tự Động Điền", type="primary"):
-    if ai_input_data and api_key:
+if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
+    if uploaded_file and api_key:
         try:
             import google.generativeai as genai
+            from PIL import Image
             genai.configure(api_key=api_key)
+            image = Image.open(uploaded_file)
             
             prompt = """
-            Bạn là chuyên gia Toán Quy hoạch tuyến tính. Hãy đọc dữ liệu bài toán (ảnh hoặc đoạn văn) sau.
+            Bạn là chuyên gia Toán Quy hoạch tuyến tính. Hãy đọc dữ liệu bài toán trong ảnh.
             Hãy mô hình hóa nó và trả về DUY NHẤT một chuỗi JSON hợp lệ (không markdown, không giải thích) với cấu trúc:
             {"opt_type": "MAX" hoặc "MIN", "n_vars": số_lượng_biến, "n_cons": số_lượng_ràng_buộc, "obj": [mảng_hệ_số_mục_tiêu], "cons": [{"coeffs": [mảng_hệ_số_ràng_buộc], "sign": "<=" hoặc ">=" hoặc "=", "rhs": số_vế_phải}]}
-            Nếu đề bài không nhắc đến hệ số nào, hãy cho nó bằng 0.
+            Nếu không thấy hệ số nào, hãy cho nó bằng 0.
             """
-            with st.spinner("🤖 AI đang phân tích dữ liệu..."):
+            with st.spinner("🤖 AI đang phân tích hình ảnh..."):
                 response = None
-                input_content = ai_input_data if ai_mode == "✍️ Phân tích từ Đề bài Văn bản" else __import__('PIL').Image.open(ai_input_data)
-                
-                for m_name in ['gemini-2.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro']:
+                for m_name in ['gemini-1.5-flash', 'gemini-1.5-pro']:
                     try:
-                        response = genai.GenerativeModel(m_name).generate_content([prompt, input_content])
+                        response = genai.GenerativeModel(m_name).generate_content([prompt, image])
                         break
                     except Exception: continue 
                 
                 if response:
                     raw_text = response.text.strip()
-                    backticks = "`" * 3
-                    raw_text = raw_text.replace(backticks + "json", "").replace(backticks, "").strip()
+                    raw_text = raw_text.replace("```json", "").replace("```", "").strip()
                     data = json.loads(raw_text)
                     
                     st.session_state.opt_input = data.get("opt_type", "MAX").upper()
@@ -117,8 +109,8 @@ if st.button("🧠 Phân tích & Tự Động Điền", type="primary"):
                     st.rerun()
                 else:
                     st.error("🛑 Không thể kết nối với AI. Vui lòng thử lại sau.")
-        except Exception as e: st.error(f"❌ AI không thể hiểu dữ liệu này. Chi tiết: {e}")
-    else: st.warning("⚠️ Bạn chưa tải ảnh hoặc nhập đề bài!")
+        except Exception as e: st.error(f"❌ Khó nhìn quá AI không đọc được. Lỗi: {e}")
+    else: st.warning("⚠️ Bạn chưa tải ảnh lên hoặc chưa có API Key!")
 st.markdown("---")
 
 # =========================================================================
@@ -162,7 +154,7 @@ st.sidebar.header("Cài đặt chung")
 method = st.sidebar.radio("CHỌN PHƯƠNG PHÁP GIẢI:", ("1. Scipy (Tổng quát, nhanh)", "2. Đồ thị (Chỉ 2 biến)", "3. Từ vựng (Đơn hình Dantzig)", "4. Từ vựng (Đơn hình Bland)", "5. Chạy tất cả (So sánh)"))
 st.sidebar.markdown("---")
 
-# TÍNH NĂNG MỚI: XUẤT NHẬP DỮ LIỆU BẰNG EXCEL / CSV
+# TÍNH NĂNG XUẤT NHẬP DỮ LIỆU BẰNG EXCEL / CSV
 st.sidebar.subheader("📥 Nhập/Xuất Dữ liệu (CSV)")
 df_export_obj = st.session_state.init_obj.copy()
 df_export_obj["Dấu"] = "="; df_export_obj["RHS"] = "Hàm Mục Tiêu" # Trick để đánh dấu hàng đầu tiên
@@ -313,7 +305,6 @@ with tab_model_dual:
 # CÁC HÀM XỬ LÝ (CORE LOGIC + TRACKER TỪNG BƯỚC)
 # =========================================================================
 
-# TÍNH NĂNG MỚI: THEO DÕI TỪNG BƯỚC GIẢI (Step-by-Step Tracker)
 class StepTracker:
     def __init__(self):
         self.steps = []
@@ -635,7 +626,6 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
         st.write("🎯 **Bảng Giá trị Nghiệm (Nghiệm Tối Ưu):**")
         st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Giá trị": np.round(opt_x, 4)}))
 
-    # TÍNH NĂNG MỚI: HIỂN THỊ TỪNG BƯỚC BẰNG SLIDER
     st.markdown("### ⏯️ Mô phỏng Từng Bước Giải")
     if len(tracker.steps) > 0:
         step_idx = st.slider("Kéo để xem bảng Từ Vựng của từng lần lặp:", 0, len(tracker.steps)-1, 0, format="Bước %d")
