@@ -7,6 +7,7 @@ import time
 import json
 import os
 from datetime import datetime
+import io
 
 # =========================================================================
 # CẤU HÌNH TRANG CHỦ & HỆ THỐNG LƯU TRỮ LỊCH SỬ
@@ -52,37 +53,46 @@ if st.session_state.init_obj.shape[1] != n_vars:
     st.session_state.init_obj = pd.DataFrame([[0.0] * n_vars], columns=obj_cols)
 if st.session_state.init_cons.shape[0] != n_cons or st.session_state.init_cons.shape[1] != (n_vars + 2):
     st.session_state.init_cons = pd.DataFrame([[0.0] * n_vars + ["<=", 0.0] for _ in range(n_cons)], columns=obj_cols + ["Dấu", "RHS"])
+
 # =========================================================================
-#QUÉT ẢNH AI 
+# 1. QUÉT ẢNH / VĂN BẢN BẰNG AI (TÍNH NĂNG MỚI: NHẬP CHỮ)
 # =========================================================================
-st.markdown("### 📸 1. Tự động nhập đề bằng AI (Upload Ảnh)")
-st.info("💡 Tải ảnh bài toán lên đây. AI sẽ phân tích và tự động điền vào bảng bên dưới!")
-uploaded_file = st.file_uploader("Kéo thả hoặc chọn ảnh...", type=["jpg", "png", "jpeg"])
+st.markdown("### 🤖 Tự động nhập đề bằng AI (Ảnh / Đề bài chữ)")
+st.info("💡 Bạn có thể tải ảnh chụp bài toán hoặc copy đoạn văn bản đề bài vào đây. AI sẽ tự động phân tích và tạo ma trận!")
 
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
 except KeyError:
     api_key = None
-    st.error("⚠️ App chưa được khai báo API Key trong mục Settings > Secrets của Streamlit!")
+    st.error("⚠️ App chưa được khai báo API Key trong mục Settings > Secrets của Streamlit Cloud!")
 
-if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
-    if uploaded_file is not None and api_key:
+ai_mode = st.radio("Chọn nguồn dữ liệu đầu vào:", ["📷 Quét từ Ảnh chụp", "✍️ Phân tích từ Đề bài Văn bản"], horizontal=True)
+
+ai_input_data = None
+if ai_mode == "📷 Quét từ Ảnh chụp":
+    ai_input_data = st.file_uploader("Kéo thả hoặc chọn ảnh...", type=["jpg", "png", "jpeg"])
+else:
+    ai_input_data = st.text_area("Nhập đề bài chữ vào đây (Vd: Một công ty cần sản xuất 2 loại sản phẩm A và B...)", height=150)
+
+if st.button("🧠 Phân tích & Tự Động Điền", type="primary"):
+    if ai_input_data and api_key:
         try:
             import google.generativeai as genai
-            from PIL import Image
             genai.configure(api_key=api_key)
-            image = Image.open(uploaded_file)
             
             prompt = """
-            Bạn là chuyên gia Toán Quy hoạch tuyến tính. Hãy đọc bài toán trong ảnh.
-            Trả về DUY NHẤT một chuỗi JSON hợp lệ (không markdown, không text dư) với cấu trúc:
-            {"opt_type": "MAX" hoặc "MIN", "n_vars": số, "n_cons": số, "obj": [mảng], "cons": [{"coeffs": [mảng], "sign": "<=", "rhs": số}]}
+            Bạn là chuyên gia Toán Quy hoạch tuyến tính. Hãy đọc dữ liệu bài toán (ảnh hoặc đoạn văn) sau.
+            Hãy mô hình hóa nó và trả về DUY NHẤT một chuỗi JSON hợp lệ (không markdown, không giải thích) với cấu trúc:
+            {"opt_type": "MAX" hoặc "MIN", "n_vars": số_lượng_biến, "n_cons": số_lượng_ràng_buộc, "obj": [mảng_hệ_số_mục_tiêu], "cons": [{"coeffs": [mảng_hệ_số_ràng_buộc], "sign": "<=" hoặc ">=" hoặc "=", "rhs": số_vế_phải}]}
+            Nếu đề bài không nhắc đến hệ số nào, hãy cho nó bằng 0.
             """
-            with st.spinner("🤖 AI đang phân tích bài toán..."):
+            with st.spinner("🤖 AI đang phân tích dữ liệu..."):
                 response = None
-                for m_name in ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']:
+                input_content = ai_input_data if ai_mode == "✍️ Phân tích từ Đề bài Văn bản" else __import__('PIL').Image.open(ai_input_data)
+                
+                for m_name in ['gemini-2.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro']:
                     try:
-                        response = genai.GenerativeModel(m_name).generate_content([prompt, image])
+                        response = genai.GenerativeModel(m_name).generate_content([prompt, input_content])
                         break
                     except Exception: continue 
                 
@@ -102,19 +112,20 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                     cons_data = [c["coeffs"] + [c["sign"], float(c["rhs"])] for c in data["cons"]]
                     st.session_state.init_cons = pd.DataFrame(cons_data, columns=new_obj_cols + ["Dấu", "RHS"])
                     
-                    st.success("✨ Nhận diện thành công!")
+                    st.success("✨ Nhận diện thành công! Hệ thống đã được điền tự động.")
                     time.sleep(1)
                     st.rerun()
-        except Exception as e: st.error(f"❌ Lỗi: {e}")
-    else: st.warning("⚠️ Bạn chưa tải ảnh lên!")
+                else:
+                    st.error("🛑 Không thể kết nối với AI. Vui lòng thử lại sau.")
+        except Exception as e: st.error(f"❌ AI không thể hiểu dữ liệu này. Chi tiết: {e}")
+    else: st.warning("⚠️ Bạn chưa tải ảnh hoặc nhập đề bài!")
 st.markdown("---")
 
 # =========================================================================
-# GIAO DIỆN SIDEBAR CHATGPT-STYLE (LỊCH SỬ & CÀI ĐẶT)
+# GIAO DIỆN SIDEBAR (LỊCH SỬ & CÀI ĐẶT & XUẤT NHẬP CSV)
 # =========================================================================
 st.sidebar.markdown("## 🕒 Gần đây (Lịch sử)")
 
-# Nút lưu phiên làm việc hiện tại
 col_save1, col_save2 = st.sidebar.columns([3, 1])
 with col_save1:
     save_name = st.text_input("Tên bài toán:", placeholder="Vd: Bài thi cuối kỳ...", label_visibility="collapsed")
@@ -122,20 +133,14 @@ with col_save2:
     if st.button("💾 Lưu"):
         name_to_save = save_name if save_name else f"Bài toán {datetime.now().strftime('%H:%M %d/%m')}"
         st.session_state.history[name_to_save] = {
-            "n_vars": st.session_state.vars_input,
-            "n_cons": st.session_state.cons_input,
-            "opt_type": st.session_state.opt_input,
-            "obj": st.session_state.init_obj.values.tolist(),
+            "n_vars": st.session_state.vars_input, "n_cons": st.session_state.cons_input,
+            "opt_type": st.session_state.opt_input, "obj": st.session_state.init_obj.values.tolist(),
             "cons": st.session_state.init_cons.values.tolist()
         }
         save_history(st.session_state.history)
         st.sidebar.success("Đã lưu!")
-        time.sleep(0.5)
-        st.rerun()
+        time.sleep(0.5); st.rerun()
 
-st.sidebar.markdown("---")
-
-# HIỂN THỊ DANH SÁCH LỊCH SỬ NHƯ CHATGPT
 if not st.session_state.history:
     st.sidebar.info("Chưa có bài toán nào được lưu.")
 else:
@@ -148,20 +153,40 @@ else:
             st.session_state.init_obj = pd.DataFrame(history_data["obj"], columns=obj_cols_res)
             st.session_state.init_cons = pd.DataFrame(history_data["cons"], columns=obj_cols_res + ["Dấu", "RHS"])
             st.rerun()
-            
     if st.sidebar.button("🗑️ Xóa toàn bộ lịch sử", type="secondary"):
-        st.session_state.history = {}
-        save_history({})
-        st.rerun()
+        st.session_state.history = {}; save_history({}); st.rerun()
 
 st.sidebar.markdown("---")
 
-# CÀI ĐẶT THÔNG SỐ CƠ BẢN
 st.sidebar.header("Cài đặt chung")
 method = st.sidebar.radio("CHỌN PHƯƠNG PHÁP GIẢI:", ("1. Scipy (Tổng quát, nhanh)", "2. Đồ thị (Chỉ 2 biến)", "3. Từ vựng (Đơn hình Dantzig)", "4. Từ vựng (Đơn hình Bland)", "5. Chạy tất cả (So sánh)"))
 st.sidebar.markdown("---")
 
-# ĐÃ PHỤC HỒI MỤC TẢI DỮ LIỆU MẪU CỦA BẠN
+# TÍNH NĂNG MỚI: XUẤT NHẬP DỮ LIỆU BẰNG EXCEL / CSV
+st.sidebar.subheader("📥 Nhập/Xuất Dữ liệu (CSV)")
+df_export_obj = st.session_state.init_obj.copy()
+df_export_obj["Dấu"] = "="; df_export_obj["RHS"] = "Hàm Mục Tiêu" # Trick để đánh dấu hàng đầu tiên
+df_export = pd.concat([df_export_obj, st.session_state.init_cons], ignore_index=True)
+csv_data = df_export.to_csv(index=False).encode('utf-8')
+st.sidebar.download_button(label="⬇️ Tải file ma trận hiện tại (.csv)", data=csv_data, file_name="MaTran_QHTT.csv", mime="text/csv", help="Lưu ma trận đang nhập để nạp lại sau này.")
+
+uploaded_csv = st.sidebar.file_uploader("⬆️ Tải file CSV lên", type=["csv"], help="Cấu trúc file y hệt file tải về.")
+if uploaded_csv and st.sidebar.button("Nạp dữ liệu từ File"):
+    try:
+        df_in = pd.read_csv(uploaded_csv)
+        n_v = len([col for col in df_in.columns if col not in ["Dấu", "RHS"]])
+        st.session_state.vars_input = n_v
+        st.session_state.cons_input = len(df_in) - 1
+        st.session_state.init_obj = df_in.iloc[[0]][[f"x{i+1}" for i in range(n_v)]].astype(float)
+        st.session_state.init_cons = df_in.iloc[1:].copy()
+        st.session_state.init_cons["Dấu"] = st.session_state.init_cons["Dấu"].fillna("<=")
+        st.session_state.init_cons["RHS"] = st.session_state.init_cons["RHS"].fillna(0.0).astype(float)
+        for i in range(n_v): st.session_state.init_cons[f"x{i+1}"] = st.session_state.init_cons[f"x{i+1}"].fillna(0.0).astype(float)
+        st.sidebar.success("Nạp thành công!"); time.sleep(1); st.rerun()
+    except Exception as e: st.sidebar.error("Lỗi định dạng file!")
+
+st.sidebar.markdown("---")
+
 st.sidebar.subheader("📂 Quản lý dữ liệu mẫu")
 if st.sidebar.button("📝 Tải mẫu 1 Pha (RHS >= 0)"):
     st.session_state.vars_input, st.session_state.cons_input, st.session_state.opt_input = 2, 3, "MAX"
@@ -169,7 +194,7 @@ if st.sidebar.button("📝 Tải mẫu 1 Pha (RHS >= 0)"):
     st.session_state.init_cons = pd.DataFrame([[1.0, 0.0, "<=", 4.0], [0.0, 2.0, "<=", 12.0], [3.0, 2.0, "<=", 18.0]], columns=["x1", "x2", "Dấu", "RHS"])
     st.rerun()
 
-if st.sidebar.button("📚 Tải mẫu 2 Pha (Trong vở ghi)"):
+if st.sidebar.button("📚 Tải mẫu 2 Pha (RHS < 0)"):
     st.session_state.vars_input, st.session_state.cons_input, st.session_state.opt_input = 2, 3, "MIN"
     st.session_state.init_obj = pd.DataFrame([[1.0, 2.0]], columns=["x1", "x2"])
     st.session_state.init_cons = pd.DataFrame([[-1.0, 1.0, "<=", -2.0], [-1.0, -2.0, "<=", -4.0], [0.0, 1.0, "<=", 2.0]], columns=["x1", "x2", "Dấu", "RHS"])
@@ -182,7 +207,6 @@ if st.sidebar.button("🔄 Đặt lại bảng trống"):
     st.rerun()
 
 st.sidebar.markdown("---")
-
 st.sidebar.number_input("Số lượng biến", 1, 20, key="vars_input")
 st.sidebar.number_input("Số lượng ràng buộc", 1, 20, key="cons_input")
 st.sidebar.radio("Mục tiêu tối ưu", ("MAX", "MIN"), key="opt_input")
@@ -286,12 +310,20 @@ with tab_model_dual:
     st.markdown(render_dual_model_latex(df_obj, df_cons, obj_cols, opt_type, bounds))
 
 # =========================================================================
-# CÁC HÀM XỬ LÝ
+# CÁC HÀM XỬ LÝ (CORE LOGIC + TRACKER TỪNG BƯỚC)
 # =========================================================================
 
-def log_and_print(log, text):
-    st.markdown(text)
-    log.append(text)
+# TÍNH NĂNG MỚI: THEO DÕI TỪNG BƯỚC GIẢI (Step-by-Step Tracker)
+class StepTracker:
+    def __init__(self):
+        self.steps = []
+        self.log = []
+    def add_step(self, title):
+        self.steps.append({"title": title, "content": []})
+    def append_to_current(self, text):
+        if not self.steps: self.add_step("Khởi tạo")
+        self.steps[-1]["content"].append(text)
+        self.log.append(text)
 
 def solve_scipy(c, df_cons, obj_cols, opt_type, bounds):
     c_scipy = -c if opt_type == "MAX" else c
@@ -340,7 +372,6 @@ def solve_graph(c, df_cons, n_vars, opt_type):
         st.error("❌ Phương pháp đồ thị chỉ hỗ trợ bài toán có đúng 2 biến (x1, x2).")
         return
     
-    # TÌM NGHIỆM TỐI ƯU TRƯỚC
     c_scipy = -c if opt_type == "MAX" else c
     A_ub, b_ub, A_eq, b_eq = [], [], [], []
     for _, row in df_cons.iterrows():
@@ -484,7 +515,7 @@ def perform_pivot(N, B, A_N, b_B, c_N, v, enter_j, leave_i):
     N[enter_j], B[leave_i] = B[leave_i], N[enter_j]
     return N, B, new_A_N, new_b_B, new_c_N, new_v
 
-def run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z", opt_type="MAX"):
+def run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, tracker, obj_name="Z", opt_type="MAX"):
     visited_bases = set()
     iteration = 0
     while True:
@@ -492,16 +523,17 @@ def run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z",
         display_c_N = -c_N if (opt_type == "MIN" and obj_name == "Z") else c_N
         current_basis = frozenset(B)
         
+        tracker.add_step(f"Lần lặp {iteration} ({obj_name})")
+        
         if current_basis in visited_bases:
-            log_and_print(log, "⚠️ **PHÁT HIỆN LẶP XOAY VÒNG (CYCLING)!**")
-            log_and_print(log, format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, obj_name=obj_name))
+            tracker.append_to_current("⚠️ **PHÁT HIỆN LẶP XOAY VÒNG (CYCLING)!**")
+            tracker.append_to_current(format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, obj_name=obj_name))
             return None
         visited_bases.add(current_basis)
 
         if all(c_N <= 1e-6):
-            log_and_print(log, f"**Lần lặp {iteration} (Tối ưu {obj_name}):**")
-            log_and_print(log, format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, obj_name=obj_name))
-            if obj_name == "Z": log_and_print(log, f"✅ **Đạt phương án tối ưu! {obj_name} = {display_v:.4f}**")
+            tracker.append_to_current(format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, obj_name=obj_name))
+            if obj_name == "Z": tracker.append_to_current(f"✅ **Đạt phương án tối ưu! {obj_name} = {display_v:.4f}**")
             return N, B, A_N, b_B, c_N, v
 
         if rule == 'dantzig':
@@ -514,26 +546,25 @@ def run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z",
         ratios = [max(0.0, b_B[i]) / A_N[i, enter_j] if A_N[i, enter_j] > 1e-6 else np.inf for i in range(m)]
         
         if all(r == np.inf for r in ratios):
-            log_and_print(log, f"**Lần lặp {iteration}:**")
-            log_and_print(log, format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, enter_j=enter_j, obj_name=obj_name))
-            log_and_print(log, "❌ **Bài toán không giới hạn (Unbounded)!**")
+            tracker.append_to_current(format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, enter_j=enter_j, obj_name=obj_name))
+            tracker.append_to_current("❌ **Bài toán không giới hạn (Unbounded)!**")
             if obj_name == "Z": st.error("❌ BÀI TOÁN KHÔNG GIỚI HẠN (UNBOUNDED)!")
             return None
 
         min_ratio = min(ratios)
         leave_i = min([i for i, r in enumerate(ratios) if abs(r - min_ratio) < 1e-6], key=lambda i: B[i])
         
-        log_and_print(log, f"**Lần lặp {iteration}:**")
-        log_and_print(log, format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, enter_j=enter_j, leave_i=leave_i, obj_name=obj_name))
-        log_and_print(log, f"🔄 Biến vào: **{var_names[N[enter_j]]}** | Biến ra: **{var_names[B[leave_i]]}**")
+        tracker.append_to_current(format_dictionary(N, B, A_N, b_B, display_c_N, display_v, var_names, enter_j=enter_j, leave_i=leave_i, obj_name=obj_name))
+        tracker.append_to_current(f"🔄 Biến vào: **{var_names[N[enter_j]]}** | Biến ra: **{var_names[B[leave_i]]}**")
 
         N, B, A_N, b_B, c_N, v = perform_pivot(N, B, A_N, b_B, c_N, v, enter_j, leave_i)
         iteration += 1
 
 def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
-    log = [] 
+    tracker = StepTracker()
+    
     if any(b != (0, None) for b in bounds): 
-        log_and_print(log, "⚠️ *Thuật toán Từ vựng giả định x >= 0. Các loại ràng buộc dấu khác không được bảo đảm tính chính xác.*")
+        tracker.append_to_current("⚠️ *Thuật toán Từ vựng giả định x >= 0. Các loại ràng buộc dấu khác không được bảo đảm tính chính xác.*")
 
     A, b = [], []
     for _, row in df_cons.iterrows():
@@ -550,27 +581,29 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
     var_names = [f"x_{i+1}" for i in range(n)] + [f"w_{i+1}" for i in range(m)] + ["x_0"]
     x0_idx = n + m
     
+    res = None
     if np.min(b_B) < -1e-6:
-        log_and_print(log, "### 🛠️ PHA 1: Bài toán bổ trợ (Tìm phương án xuất phát)")
+        tracker.add_step("🛠️ PHA 1: Tìm phương án xuất phát")
         N, B = list(range(n)) + [x0_idx], list(range(n, n + m))
         A_N = np.column_stack((A_N, np.full(m, -1.0)))
         c_N, v = np.zeros(n + 1), 0.0
         c_N[-1] = -1.0 
         leave_i, enter_j = np.argmin(b_B), n 
-        log_and_print(log, "**Bước khởi tạo Từ vựng Pha 1:**")
-        log_and_print(log, format_dictionary(N, B, A_N, b_B, c_N, v, var_names, enter_j, leave_i, obj_name="\\xi"))
+        tracker.append_to_current("**Bước khởi tạo Từ vựng Pha 1:**")
+        tracker.append_to_current(format_dictionary(N, B, A_N, b_B, c_N, v, var_names, enter_j, leave_i, obj_name="\\xi"))
         N, B, A_N, b_B, c_N, v = perform_pivot(N, B, A_N, b_B, c_N, v, enter_j, leave_i)
 
-        res = run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="\\xi")
-        if res is None: return 
-        N, B, A_N, b_B, c_N, v = res
+        res_phase1 = run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, tracker, obj_name="\\xi")
+        if res_phase1 is None: return 
+        N, B, A_N, b_B, c_N, v = res_phase1
 
         if v < -1e-6:
-            log_and_print(log, "❌ **BÀI TOÁN VÔ NGHIỆM! (Pha 1 có x_0 > 0).**")
+            tracker.append_to_current("❌ **BÀI TOÁN VÔ NGHIỆM! (Pha 1 có x_0 > 0).**")
             st.error("❌ BÀI TOÁN VÔ NGHIỆM! Các ràng buộc mâu thuẫn nhau.")
             return
             
-        log_and_print(log, "✅ **Kết thúc Pha 1 thành công. Khử biến x_0 và chuyển sang Pha 2.**")
+        tracker.add_step("✅ Chuyển tiếp Pha 1 sang Pha 2")
+        tracker.append_to_current("Kết thúc Pha 1 thành công. Khử biến x_0 và thay hàm mục tiêu gốc vào.")
         
         if x0_idx in N:
             col_idx = N.index(x0_idx)
@@ -585,11 +618,10 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
                 v_p2 += coeff * b_B[row_idx]
                 for j in range(len(N)): c_N_p2[j] -= coeff * A_N[row_idx, j]
         c_N, v = c_N_p2, v_p2
-        log_and_print(log, "---\n### 🎯 PHA 2: Giải bài toán gốc")
+        res = run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, tracker, obj_name="Z", opt_type=opt_type)
     else:
         N, B, c_N, v = list(range(n)), list(range(n, n + m)), c_orig.copy(), 0.0
-
-    res = run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, log, obj_name="Z", opt_type=opt_type)
+        res = run_simplex_loop(N, B, A_N, b_B, c_N, v, var_names, rule, tracker, obj_name="Z", opt_type=opt_type)
 
     if res is not None:
         N, B, A_N, b_B, c_N, v = res
@@ -603,7 +635,15 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
         st.write("🎯 **Bảng Giá trị Nghiệm (Nghiệm Tối Ưu):**")
         st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Giá trị": np.round(opt_x, 4)}))
 
-    st.download_button(label=f"📥 Tải Báo Cáo Giải Chi Tiết ({rule.title()})", data="\n\n".join(log), file_name=f"BaoCao_QHTT_{rule}.md", mime="text/markdown")
+    # TÍNH NĂNG MỚI: HIỂN THỊ TỪNG BƯỚC BẰNG SLIDER
+    st.markdown("### ⏯️ Mô phỏng Từng Bước Giải")
+    if len(tracker.steps) > 0:
+        step_idx = st.slider("Kéo để xem bảng Từ Vựng của từng lần lặp:", 0, len(tracker.steps)-1, 0, format="Bước %d")
+        st.info(f"📍 Đang xem: **{tracker.steps[step_idx]['title']}**")
+        for line in tracker.steps[step_idx]["content"]:
+            st.markdown(line)
+
+    st.download_button(label=f"📥 Tải toàn bộ Báo Cáo Giải ({rule.title()})", data="\n\n".join(tracker.log), file_name=f"BaoCao_QHTT_{rule}.md", mime="text/markdown")
 
 # ----------------- NÚT THỰC THI CHÍNH -----------------
 st.markdown("---")
