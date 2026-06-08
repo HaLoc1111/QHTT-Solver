@@ -52,9 +52,8 @@ if st.session_state.init_obj.shape[1] != n_vars:
     st.session_state.init_obj = pd.DataFrame([[0.0] * n_vars], columns=obj_cols)
 if st.session_state.init_cons.shape[0] != n_cons or st.session_state.init_cons.shape[1] != (n_vars + 2):
     st.session_state.init_cons = pd.DataFrame([[0.0] * n_vars + ["<=", 0.0] for _ in range(n_cons)], columns=obj_cols + ["Dấu", "RHS"])
-
 # =========================================================================
-# GIAO DIỆN CHÍNH: QUÉT ẢNH AI 
+QUÉT ẢNH AI 
 # =========================================================================
 st.markdown("### 📸 1. Tự động nhập đề bằng AI (Upload Ảnh)")
 st.info("💡 Tải ảnh bài toán lên đây. AI sẽ phân tích và tự động điền vào bảng bên dưới!")
