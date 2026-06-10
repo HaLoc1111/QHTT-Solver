@@ -637,9 +637,15 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
         st.write("🎯 **Bảng Giá trị Nghiệm (Nghiệm Tối Ưu):**")
         st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Giá trị": np.round(opt_x, 4)}))
 
-    st.markdown("### ⏯️ Mô phỏng Từng Bước Giải")
+   st.markdown("### ⏯️ Mô phỏng Từng Bước Giải")
     if len(tracker.steps) > 0:
-        step_idx = st.slider("Kéo để xem bảng Từ Vựng của từng lần lặp:", 0, len(tracker.steps)-1, 0, format="Bước %d")
+        # THÊM THAM SỐ key=f"step_slider_{rule}" ĐỂ CHỐNG TRÙNG LẶP ID
+        step_idx = st.slider(
+            "Kéo để xem bảng Từ Vựng của từng lần lặp:", 
+            0, len(tracker.steps)-1, 0, 
+            format="Bước %d", 
+            key=f"step_slider_{rule}"
+        )
         st.info(f"📍 Đang xem: **{tracker.steps[step_idx]['title']}**")
         for line in tracker.steps[step_idx]["content"]:
             st.markdown(line)
