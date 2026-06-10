@@ -85,16 +85,14 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                 response = None
                 error_logs = []
                 
-                # LIST MODEL SIÊU KHỦNG CỦA LỘC
                 model_names_to_try = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
                 
                 for m_name in model_names_to_try:
                     try:
                         model = genai.GenerativeModel(m_name)
                         response = model.generate_content([prompt, image])
-                        break # Thành công thì thoát vòng lặp
+                        break 
                     except Exception as e: 
-                        # Lưu lại lỗi của TỪNG MODEL để chẩn đoán
                         error_logs.append(f"❌ {m_name}: {str(e)}")
                         continue 
                 
@@ -117,7 +115,6 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                     time.sleep(1)
                     st.rerun()
                 else:
-                    # In thẳng mặt tất cả các lỗi nếu cả 3 model đều tịt
                     err_msg = "\n\n".join(error_logs)
                     st.error(f"🛑 CẢ 3 MODEL ĐỀU BỊ GOOGLE TỪ CHỐI. LỖI CHI TIẾT:\n\n{err_msg}")
         except Exception as e: st.error(f"❌ Hệ thống không đọc được ảnh. Lỗi code: {e}")
@@ -637,9 +634,9 @@ def solve_dictionary(c, df_cons, obj_cols, opt_type, bounds, rule='dantzig'):
         st.write("🎯 **Bảng Giá trị Nghiệm (Nghiệm Tối Ưu):**")
         st.dataframe(pd.DataFrame({"Biến số": obj_cols, "Giá trị": np.round(opt_x, 4)}))
 
-       st.markdown("### ⏯️ Mô phỏng Từng Bước Giải")
-        if len(tracker.steps) > 0:
-        # THÊM THAM SỐ key=f"step_slider_{rule}" ĐỂ CHỐNG TRÙNG LẶP ID
+    st.markdown("### ⏯️ Mô phỏng Từng Bước Giải")
+    if len(tracker.steps) > 0:
+        # ĐÃ FIX LỖI DUPLICATE ELEMENT ID Ở ĐÂY
         step_idx = st.slider(
             "Kéo để xem bảng Từ Vựng của từng lần lặp:", 
             0, len(tracker.steps)-1, 0, 
