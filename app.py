@@ -83,13 +83,19 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
             """
             with st.spinner("🤖 AI đang phân tích hình ảnh..."):
                 response = None
-                last_err = ""
-                for m_name in ['gemini-1.5-flash', 'gemini-1.5-pro']:
+                error_logs = []
+                
+                # LIST MODEL SIÊU KHỦNG CỦA LỘC
+                model_names_to_try = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
+                
+                for m_name in model_names_to_try:
                     try:
-                        response = genai.GenerativeModel(m_name).generate_content([prompt, image])
-                        break
+                        model = genai.GenerativeModel(m_name)
+                        response = model.generate_content([prompt, image])
+                        break # Thành công thì thoát vòng lặp
                     except Exception as e: 
-                        last_err = str(e)
+                        # Lưu lại lỗi của TỪNG MODEL để chẩn đoán
+                        error_logs.append(f"❌ {m_name}: {str(e)}")
                         continue 
                 
                 if response:
@@ -111,8 +117,10 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                     time.sleep(1)
                     st.rerun()
                 else:
-                    st.error(f"🛑 Không thể kết nối với AI. LỖI GỐC: {last_err}")
-        except Exception as e: st.error(f"❌ Khó nhìn quá AI không đọc được. Lỗi: {e}")
+                    # In thẳng mặt tất cả các lỗi nếu cả 3 model đều tịt
+                    err_msg = "\n\n".join(error_logs)
+                    st.error(f"🛑 CẢ 3 MODEL ĐỀU BỊ GOOGLE TỪ CHỐI. LỖI CHI TIẾT:\n\n{err_msg}")
+        except Exception as e: st.error(f"❌ Hệ thống không đọc được ảnh. Lỗi code: {e}")
     else: st.warning("⚠️ Bạn chưa tải ảnh lên hoặc chưa có API Key!")
 st.markdown("---")
 
