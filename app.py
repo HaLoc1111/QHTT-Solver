@@ -83,11 +83,14 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
             """
             with st.spinner("🤖 AI đang phân tích hình ảnh..."):
                 response = None
+                last_err = ""
                 for m_name in ['gemini-1.5-flash', 'gemini-1.5-pro']:
                     try:
                         response = genai.GenerativeModel(m_name).generate_content([prompt, image])
                         break
-                    except Exception: continue 
+                    except Exception as e: 
+                        last_err = str(e)
+                        continue 
                 
                 if response:
                     raw_text = response.text.strip()
@@ -108,7 +111,7 @@ if st.button("🧠 Quét Ảnh & Tự Động Điền", type="primary"):
                     time.sleep(1)
                     st.rerun()
                 else:
-                    st.error("🛑 Không thể kết nối với AI. Vui lòng thử lại sau.")
+                    st.error(f"🛑 Không thể kết nối với AI. LỖI GỐC: {last_err}")
         except Exception as e: st.error(f"❌ Khó nhìn quá AI không đọc được. Lỗi: {e}")
     else: st.warning("⚠️ Bạn chưa tải ảnh lên hoặc chưa có API Key!")
 st.markdown("---")
